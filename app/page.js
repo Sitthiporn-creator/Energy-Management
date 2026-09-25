@@ -13,8 +13,8 @@ import {
   CartesianGrid,
 } from 'recharts';
 
-const ICON_OPTIONS = ['⚡', '🔥', '💧', '🛢️', '🌱', '☀️', '🔋', '⚙️'];
-const COLOR_OPTIONS = [
+// สีกำหนดเองภายในระบบ ไล่ตามลำดับประเภทพลังงาน ไม่ต้องให้ผู้ใช้เลือก
+const PALETTE = [
   '#3b82f6', '#ef4444', '#22c55e', '#f59e0b',
   '#a855f7', '#06b6d4', '#ec4899', '#64748b',
 ];
@@ -30,8 +30,6 @@ export default function DashboardPage() {
   const [form, setForm] = useState({
     name: '',
     unit: '',
-    color: COLOR_OPTIONS[0],
-    icon: ICON_OPTIONS[0],
   });
 
   useEffect(() => {
@@ -67,7 +65,7 @@ export default function DashboardPage() {
         energy_values (
           value,
           energy_type_id,
-          energy_types ( energy_name, energy_key, unit, color, icon )
+          energy_types ( energy_name, energy_key, unit )
         )
       `)
       .eq('period_type', viewMode)
@@ -86,14 +84,12 @@ export default function DashboardPage() {
       energy_name: form.name,
       energy_key: form.name.toLowerCase().trim().replace(/\s+/g, '_'),
       unit: form.unit,
-      color: form.color,
-      icon: form.icon,
       is_active: true,
     });
     setSaving(false);
 
     if (!error) {
-      setForm({ name: '', unit: '', color: COLOR_OPTIONS[0], icon: ICON_OPTIONS[0] });
+      setForm({ name: '', unit: '' });
       setShowAddModal(false);
       fetchEnergyTypes();
     } else {
@@ -178,9 +174,9 @@ export default function DashboardPage() {
                 {grandTotal().toLocaleString(undefined, { maximumFractionDigits: 2 })}
               </div>
             </div>
-            {energyTypes.map((t) => (
-              <div key={t.id} style={{ background: 'white', border: '1px solid #e2e8f0', borderLeft: `4px solid ${t.color || '#3b82f6'}`, borderRadius: '12px', padding: '20px' }}>
-                <div style={{ color: '#64748b', fontSize: '13px' }}>{t.icon} {t.energy_name} ({t.unit})</div>
+            {energyTypes.map((t, i) => (
+              <div key={t.id} style={{ background: 'white', border: '1px solid #e2e8f0', borderLeft: `4px solid ${PALETTE[i % PALETTE.length]}`, borderRadius: '12px', padding: '20px' }}>
+                <div style={{ color: '#64748b', fontSize: '13px' }}>{t.energy_name} ({t.unit})</div>
                 <div style={{ fontSize: '22px', fontWeight: 700, marginTop: '4px' }}>
                   {totalForType(t.id).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 </div>
@@ -203,8 +199,8 @@ export default function DashboardPage() {
                   <YAxis />
                   <Tooltip />
                   <Legend />
-                  {energyTypes.map((t) => (
-                    <Bar key={t.id} dataKey={t.energy_name} fill={t.color || '#3b82f6'} radius={[4, 4, 0, 0]} />
+                  {energyTypes.map((t, i) => (
+                    <Bar key={t.id} dataKey={t.energy_name} fill={PALETTE[i % PALETTE.length]} radius={[4, 4, 0, 0]} />
                   ))}
                 </BarChart>
               </ResponsiveContainer>
@@ -244,38 +240,7 @@ export default function DashboardPage() {
               style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '12px' }}
             />
 
-            <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>สี</label>
-            <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
-              {COLOR_OPTIONS.map((c) => (
-                <div
-                  key={c}
-                  onClick={() => setForm({ ...form, color: c })}
-                  style={{
-                    width: '26px', height: '26px', borderRadius: '50%', background: c, cursor: 'pointer',
-                    border: form.color === c ? '2px solid #1e293b' : '2px solid transparent',
-                  }}
-                />
-              ))}
-            </div>
-
-            <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>ไอคอน</label>
-            <div style={{ display: 'flex', gap: '6px', marginBottom: '18px', flexWrap: 'wrap' }}>
-              {ICON_OPTIONS.map((ic) => (
-                <div
-                  key={ic}
-                  onClick={() => setForm({ ...form, icon: ic })}
-                  style={{
-                    width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    borderRadius: '6px', cursor: 'pointer', fontSize: '18px',
-                    border: form.icon === ic ? '2px solid #1e293b' : '1px solid #e2e8f0',
-                  }}
-                >
-                  {ic}
-                </div>
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '18px' }}>
               <button type="button" onClick={() => setShowAddModal(false)} style={{ padding: '8px 14px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer' }}>
                 ยกเลิก
               </button>
