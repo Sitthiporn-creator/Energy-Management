@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import {
@@ -24,13 +25,6 @@ export default function DashboardPage() {
   const [records, setRecords] = useState([]); // energy_data + nested energy_values
   const [viewMode, setViewMode] = useState('monthly'); // ต้องตรงกับค่าที่ใช้เก็บใน period_type
   const [loading, setLoading] = useState(true);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const [form, setForm] = useState({
-    name: '',
-    unit: '',
-  });
 
   useEffect(() => {
     fetchEnergyTypes();
@@ -75,28 +69,6 @@ export default function DashboardPage() {
     setLoading(false);
   }
 
-  async function handleAddType(e) {
-    e.preventDefault();
-    if (!form.name || !form.unit) return;
-
-    setSaving(true);
-    const { error } = await supabase.from('energy_types').insert({
-      energy_name: form.name,
-      energy_key: form.name.toLowerCase().trim().replace(/\s+/g, '_'),
-      unit: form.unit,
-      is_active: true,
-    });
-    setSaving(false);
-
-    if (!error) {
-      setForm({ name: '', unit: '' });
-      setShowAddModal(false);
-      fetchEnergyTypes();
-    } else {
-      alert('เพิ่มประเภทพลังงานไม่สำเร็จ: ' + error.message);
-    }
-  }
-
   // แปลง records (energy_data + energy_values ซ้อนอยู่ข้างใน) ให้เป็นรูปแบบที่กราฟใช้ได้
   // ผลลัพธ์: [{ key: period_label, 'ไฟฟ้า': 120, 'LPG': 30, ... }, ...]
   function buildChartData() {
@@ -133,15 +105,15 @@ export default function DashboardPage() {
           <h1 style={{ fontSize: '28px', fontWeight: 700, margin: 0 }}>⚡ Factory Energy Management</h1>
           <p style={{ color: '#64748b', marginTop: '4px' }}>ภาพรวมการใช้พลังงานของโรงงาน</p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
+        <Link
+          href="/energy-data"
           style={{
-            background: '#3b82f6', color: 'white', border: 'none',
-            borderRadius: '8px', padding: '10px 18px', fontWeight: 600, cursor: 'pointer',
+            background: '#3b82f6', color: 'white', textDecoration: 'none',
+            borderRadius: '8px', padding: '10px 18px', fontWeight: 600, display: 'inline-block',
           }}
         >
-          + เพิ่มประเภทพลังงาน
-        </button>
+          + กรอกข้อมูลพลังงาน
+        </Link>
       </div>
 
       {/* Toggle รายเดือน/รายปี */}
@@ -209,48 +181,6 @@ export default function DashboardPage() {
         </>
       )}
 
-      {/* Modal เพิ่มประเภทพลังงาน */}
-      {showAddModal && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}
-          onClick={() => setShowAddModal(false)}
-        >
-          <form
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={handleAddType}
-            style={{ background: 'white', borderRadius: '12px', padding: '24px', width: '360px' }}
-          >
-            <h3 style={{ marginTop: 0 }}>เพิ่มประเภทพลังงานใหม่</h3>
-
-            <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>ชื่อประเภท</label>
-            <input
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="เช่น น้ำมันดีเซล"
-              required
-              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '12px' }}
-            />
-
-            <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>หน่วย</label>
-            <input
-              value={form.unit}
-              onChange={(e) => setForm({ ...form, unit: e.target.value })}
-              placeholder="เช่น L, kWh, kg"
-              required
-              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '12px' }}
-            />
-
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '18px' }}>
-              <button type="button" onClick={() => setShowAddModal(false)} style={{ padding: '8px 14px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer' }}>
-                ยกเลิก
-              </button>
-              <button type="submit" disabled={saving} style={{ padding: '8px 14px', borderRadius: '6px', border: 'none', background: '#3b82f6', color: 'white', cursor: 'pointer' }}>
-                {saving ? 'กำลังบันทึก...' : 'บันทึก'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
     </div>
   );
 }
