@@ -12,28 +12,54 @@ const ELECTRICITY_SYSTEMS = [
   { key: 'others', name: 'Others' },
 ];
 
+const MONTH_NAMES = [
+  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
+];
+
+const CURRENT_YEAR = new Date().getFullYear();
+const YEAR_OPTIONS = Array.from({ length: 11 }, (_, i) => CURRENT_YEAR - 5 + i);
+
+// สร้าง record_date + period_label จาก period_type/month/year
+function buildDateLabel(period_type, month, year) {
+  if (period_type === 'yearly') {
+    return { record_date: `${year}-01-01`, period_label: `ปี ${year}` };
+  }
+  const mm = String(month).padStart(2, '0');
+  return { record_date: `${year}-${mm}-01`, period_label: `${MONTH_NAMES[month - 1]} ${year}` };
+}
+
+const emptyEnergyForm = {
+  period_type: 'monthly',
+  month: new Date().getMonth() + 1,
+  year: CURRENT_YEAR,
+  note: '',
+  values: {},
+};
+
+const emptyBreakdownForm = {
+  period_type: 'monthly',
+  month: new Date().getMonth() + 1,
+  year: CURRENT_YEAR,
+  note: '',
+  breakdown: Object.fromEntries(ELECTRICITY_SYSTEMS.map((s) => [s.key, ''])),
+};
+
 export default function EnergyDataPage() {
   const [energyTypes, setEnergyTypes] = useState([]);
   const [entries, setEntries] = useState([]);
-  const [viewMode, setViewMode] = useState('monthly'); // 'monthly' | 'yearly'
+  const [viewMode, setViewMode] = useState('monthly'); // 'monthly' | 'yearly' — ใช้กรองตารางรายการด้านล่าง
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showAddTypeForm, setShowAddTypeForm] = useState(false);
-  const [showAddEntryForm, setShowAddEntryForm] = useState(false);
+  const [showEnergyForm, setShowEnergyForm] = useState(false);
+  const [showBreakdownForm, setShowBreakdownForm] = useState(false);
   const [editingId, setEditingId] = useState(null); // id ของ energy_data ที่กำลังแก้ไข
 
   const [typeForm, setTypeForm] = useState({ name: '', unit: '' });
-
-  const emptyEntryForm = {
-    record_date: new Date().toISOString().slice(0, 10),
-    period_type: 'monthly',
-    period_label: '',
-    note: '',
-    values: {},
-    breakdown: Object.fromEntries(ELECTRICITY_SYSTEMS.map((s) => [s.key, ''])),
-  };
-  const [entryForm, setEntryForm] = useState(emptyEntryForm);
-  const [editForm, setEditForm] = useState(emptyEntryForm);
+  const [energyForm, setEnergyForm] = useState(emptyEnergyForm);
+  const [breakdownForm, setBreakdownForm] = useState(emptyBreakdownForm);
+  const [editForm, setEditForm] = useState({ ...emptyEnergyForm, breakdown: emptyBreakdownForm.breakdown });
 
   useEffect(() => {
     fetchEnergyTypes();
@@ -93,18 +119,20 @@ export default function EnergyDataPage() {
     }
   }
 
-  // ---------- เพิ่มข้อมูลใหม่ ----------
-  async function handleAddEntry(e) {
+  // ---------- เพิ่มค่าพลังงาน (ไฟฟ้า/LPG/Biogas/Generator) ----------
+  async function handleAddEnergyEntry(e) {
     e.preventDefault();
     setSaving(true);
+
+    const { record_date, period_label } = buildDateLabel(energyForm.period_type, energyForm.month, energyForm.year);
 
     const { data: dataRow, error: dataError } = await supabase
       .from('energy_data')
       .insert({
-        record_date: entryForm.record_date,
-        period_type: entryForm.period_type,
-        period_label: entryForm.period_label || entryForm.record_date,
-        note: entryForm.note || null,
+        record_date,
+        period_type: energyForm.period_type,
+        period_label,
+        note: energyForm.note || null,
       })
       .select()
       .single();
@@ -116,11 +144,11 @@ export default function EnergyDataPage() {
     }
 
     const valueRows = energyTypes
-      .filter((t) => entryForm.values[t.id] !== undefined && entryForm.values[t.id] !== '')
+      .filter((t) => energyForm.values[t.id] !== undefined && energyForm.values[t.id] !== '')
       .map((t) => ({
         energy_data_id: dataRow.id,
         energy_type_id: t.id,
-        value: Number(entryForm.values[t.id]),
+        value: Number(energyForm.values[t.id]),
       }));
 
     if (valueRows.length > 0) {
@@ -128,12 +156,49 @@ export default function EnergyDataPage() {
       if (valuesError) alert('บันทึกค่าพลังงานไม่สำเร็จ: ' + valuesError.message);
     }
 
+    setSaving(false);
+
+    // รายเดือน: เลื่อน dropdown ไปเดือนถัดไปอัตโนมัติ (ปีเดิม) เพื่อกรอกต่อได้ทันที จนสุดที่ธันวาคม
+    // ปีจะไม่เปลี่ยนเองจนกว่าผู้ใช้จะไปเลือกปีใหม่ด้วยตัวเอง
+    if (energyForm.period_type === 'monthly' && energyForm.month < 12) {
+      setEnergyForm({ ...emptyEnergyForm, month: energyForm.month + 1, year: energyForm.year });
+    } else {
+      setEnergyForm({ ...emptyEnergyForm, period_type: energyForm.period_type, year: energyForm.year });
+    }
+
+    if (energyForm.period_type === viewMode) fetchEntries();
+  }
+
+  // ---------- เพิ่มสัดส่วนไฟฟ้าตามระบบ ----------
+  async function handleAddBreakdownEntry(e) {
+    e.preventDefault();
+    setSaving(true);
+
+    const { record_date, period_label } = buildDateLabel(breakdownForm.period_type, breakdownForm.month, breakdownForm.year);
+
+    const { data: dataRow, error: dataError } = await supabase
+      .from('energy_data')
+      .insert({
+        record_date,
+        period_type: breakdownForm.period_type,
+        period_label,
+        note: breakdownForm.note || null,
+      })
+      .select()
+      .single();
+
+    if (dataError || !dataRow) {
+      setSaving(false);
+      alert('บันทึกข้อมูลไม่สำเร็จ: ' + dataError?.message);
+      return;
+    }
+
     const breakdownRows = ELECTRICITY_SYSTEMS
-      .filter((s) => entryForm.breakdown[s.key] !== undefined && entryForm.breakdown[s.key] !== '')
+      .filter((s) => breakdownForm.breakdown[s.key] !== undefined && breakdownForm.breakdown[s.key] !== '')
       .map((s) => ({
         energy_data_id: dataRow.id,
         system_key: s.key,
-        value: Number(entryForm.breakdown[s.key]),
+        value: Number(breakdownForm.breakdown[s.key]),
       }));
 
     if (breakdownRows.length > 0) {
@@ -142,13 +207,20 @@ export default function EnergyDataPage() {
     }
 
     setSaving(false);
-    setEntryForm(emptyEntryForm);
-    setShowAddEntryForm(false);
-    if (entryForm.period_type === viewMode) fetchEntries();
+
+    if (breakdownForm.period_type === 'monthly' && breakdownForm.month < 12) {
+      setBreakdownForm({ ...emptyBreakdownForm, month: breakdownForm.month + 1, year: breakdownForm.year });
+    } else {
+      setBreakdownForm({ ...emptyBreakdownForm, period_type: breakdownForm.period_type, year: breakdownForm.year });
+    }
+
+    if (breakdownForm.period_type === viewMode) fetchEntries();
   }
 
-  // ---------- เริ่มแก้ไขแถวที่มีอยู่ ----------
+  // ---------- เริ่มแก้ไขแถวที่มีอยู่ (แก้ได้ทั้งค่าพลังงานและสัดส่วนไฟฟ้าในที่เดียว) ----------
   function startEdit(entry) {
+    const d = new Date(entry.record_date);
+
     const values = {};
     (entry.energy_values || []).forEach((v) => {
       values[v.energy_type_id] = v.value;
@@ -160,9 +232,9 @@ export default function EnergyDataPage() {
     });
 
     setEditForm({
-      record_date: entry.record_date,
       period_type: entry.period_type,
-      period_label: entry.period_label || '',
+      month: d.getMonth() + 1,
+      year: d.getFullYear(),
       note: entry.note || '',
       values,
       breakdown,
@@ -172,7 +244,7 @@ export default function EnergyDataPage() {
 
   function cancelEdit() {
     setEditingId(null);
-    setEditForm(emptyEntryForm);
+    setEditForm({ ...emptyEnergyForm, breakdown: emptyBreakdownForm.breakdown });
   }
 
   // ---------- บันทึกการแก้ไข ----------
@@ -182,12 +254,14 @@ export default function EnergyDataPage() {
 
     setSaving(true);
 
+    const { record_date, period_label } = buildDateLabel(editForm.period_type, editForm.month, editForm.year);
+
     // 1) อัปเดตแถวหลักใน energy_data
     const { error: updateError } = await supabase
       .from('energy_data')
       .update({
-        record_date: editForm.record_date,
-        period_label: editForm.period_label || editForm.record_date,
+        record_date,
+        period_label,
         note: editForm.note || null,
       })
       .eq('id', editingId);
@@ -198,7 +272,7 @@ export default function EnergyDataPage() {
       return;
     }
 
-    // 2) ลบค่าพลังงานเดิมทั้งหมดของแถวนี้ แล้วใส่ค่าใหม่แทน (ง่ายและชัวร์กว่า upsert ทีละตัว)
+    // 2) ลบค่าพลังงานเดิมทั้งหมดของแถวนี้ แล้วใส่ค่าใหม่แทน
     await supabase.from('energy_values').delete().eq('energy_data_id', editingId);
 
     const valueRows = energyTypes
@@ -291,8 +365,8 @@ export default function EnergyDataPage() {
         )}
       </div>
 
-      {/* Toggle รายเดือน/รายปี + ปุ่มเพิ่มข้อมูล */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+      {/* Toggle รายเดือน/รายปี ของตารางด้านล่าง + ปุ่มเพิ่มข้อมูล 2 ปุ่มแยกกัน */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '12px' }}>
         <div style={{ display: 'flex', gap: '8px' }}>
           {['monthly', 'yearly'].map((mode) => (
             <button
@@ -310,22 +384,101 @@ export default function EnergyDataPage() {
           ))}
         </div>
 
-        <button
-          onClick={() => {
-            setEntryForm({ ...emptyEntryForm, period_type: viewMode });
-            setShowAddEntryForm((v) => !v);
-          }}
-          style={{ background: '#3b82f6', color: 'white', border: 'none', borderRadius: '8px', padding: '10px 18px', fontWeight: 600, cursor: 'pointer' }}
-        >
-          {showAddEntryForm ? 'ยกเลิก' : '+ เพิ่มข้อมูล'}
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={() => setShowEnergyForm((v) => !v)}
+            style={{ background: '#3b82f6', color: 'white', border: 'none', borderRadius: '8px', padding: '10px 18px', fontWeight: 600, cursor: 'pointer' }}
+          >
+            {showEnergyForm ? 'ยกเลิก' : '+ เพิ่มค่าพลังงาน'}
+          </button>
+          <button
+            onClick={() => setShowBreakdownForm((v) => !v)}
+            style={{ background: '#a855f7', color: 'white', border: 'none', borderRadius: '8px', padding: '10px 18px', fontWeight: 600, cursor: 'pointer' }}
+          >
+            {showBreakdownForm ? 'ยกเลิก' : '+ เพิ่มสัดส่วนไฟฟ้า'}
+          </button>
+        </div>
       </div>
 
-      {/* ฟอร์มเพิ่มข้อมูลใหม่ */}
-      {showAddEntryForm && (
+      {/* ฟอร์มเพิ่มค่าพลังงาน */}
+      {showEnergyForm && (
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
-          <EntryFields form={entryForm} setForm={setEntryForm} energyTypes={energyTypes} />
-          <button onClick={handleAddEntry} disabled={saving} style={{ marginTop: '12px', padding: '10px 20px', borderRadius: '6px', border: 'none', background: '#3b82f6', color: 'white', fontWeight: 600, cursor: 'pointer' }}>
+          <h4 style={{ marginTop: 0 }}>เพิ่มค่าพลังงาน</h4>
+          <MonthYearSelector form={energyForm} setForm={setEnergyForm} />
+
+          <label style={{ display: 'block', fontSize: '13px', marginBottom: '8px', fontWeight: 600 }}>ค่าพลังงานแต่ละประเภท</label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', marginBottom: '12px' }}>
+            {energyTypes.map((t) => (
+              <div key={t.id}>
+                <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>{t.energy_name} ({t.unit})</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={energyForm.values[t.id] ?? ''}
+                  onChange={(e) => setEnergyForm({ ...energyForm, values: { ...energyForm.values, [t.id]: e.target.value } })}
+                  placeholder="0"
+                  style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                />
+              </div>
+            ))}
+          </div>
+
+          <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>หมายเหตุ (ถ้ามี)</label>
+          <input
+            value={energyForm.note}
+            onChange={(e) => setEnergyForm({ ...energyForm, note: e.target.value })}
+            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '12px' }}
+          />
+
+          {energyForm.period_type === 'monthly' && (
+            <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '-4px' }}>
+              บันทึกแล้วระบบจะเลื่อนไปเดือนถัดไปให้อัตโนมัติ (ปีเดิม) เพื่อกรอกต่อเนื่องได้ทันที
+            </p>
+          )}
+
+          <button onClick={handleAddEnergyEntry} disabled={saving} style={{ padding: '10px 20px', borderRadius: '6px', border: 'none', background: '#3b82f6', color: 'white', fontWeight: 600, cursor: 'pointer' }}>
+            {saving ? 'กำลังบันทึก...' : 'บันทึกข้อมูล'}
+          </button>
+        </div>
+      )}
+
+      {/* ฟอร์มเพิ่มสัดส่วนไฟฟ้าตามระบบ */}
+      {showBreakdownForm && (
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
+          <h4 style={{ marginTop: 0 }}>เพิ่มสัดส่วนการใช้ไฟฟ้าตามระบบ</h4>
+          <MonthYearSelector form={breakdownForm} setForm={setBreakdownForm} />
+
+          <label style={{ display: 'block', fontSize: '13px', marginBottom: '8px', fontWeight: 600 }}>สัดส่วนการใช้ไฟฟ้าตามระบบ (kWh)</label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', marginBottom: '12px' }}>
+            {ELECTRICITY_SYSTEMS.map((s) => (
+              <div key={s.key}>
+                <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>{s.name}</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={breakdownForm.breakdown[s.key] ?? ''}
+                  onChange={(e) => setBreakdownForm({ ...breakdownForm, breakdown: { ...breakdownForm.breakdown, [s.key]: e.target.value } })}
+                  placeholder="0"
+                  style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                />
+              </div>
+            ))}
+          </div>
+
+          <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>หมายเหตุ (ถ้ามี)</label>
+          <input
+            value={breakdownForm.note}
+            onChange={(e) => setBreakdownForm({ ...breakdownForm, note: e.target.value })}
+            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '12px' }}
+          />
+
+          {breakdownForm.period_type === 'monthly' && (
+            <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '-4px' }}>
+              บันทึกแล้วระบบจะเลื่อนไปเดือนถัดไปให้อัตโนมัติ (ปีเดิม) เพื่อกรอกต่อเนื่องได้ทันที
+            </p>
+          )}
+
+          <button onClick={handleAddBreakdownEntry} disabled={saving} style={{ padding: '10px 20px', borderRadius: '6px', border: 'none', background: '#a855f7', color: 'white', fontWeight: 600, cursor: 'pointer' }}>
             {saving ? 'กำลังบันทึก...' : 'บันทึกข้อมูล'}
           </button>
         </div>
@@ -345,8 +498,7 @@ export default function EnergyDataPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
             <thead>
               <tr style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>
-                <th style={{ padding: '8px' }}>วันที่</th>
-                <th style={{ padding: '8px' }}>ป้ายกำกับ</th>
+                <th style={{ padding: '8px' }}>ช่วงเวลา</th>
                 <th style={{ padding: '8px' }}>ค่าพลังงาน</th>
                 <th style={{ padding: '8px' }}>สัดส่วนไฟฟ้าตามระบบ</th>
                 <th style={{ padding: '8px' }}>จัดการ</th>
@@ -356,8 +508,50 @@ export default function EnergyDataPage() {
               {entries.map((entry) =>
                 editingId === entry.id ? (
                   <tr key={entry.id}>
-                    <td colSpan={5} style={{ padding: '12px', background: '#f8fafc' }}>
-                      <EntryFields form={editForm} setForm={setEditForm} energyTypes={energyTypes} hidePeriodType />
+                    <td colSpan={4} style={{ padding: '12px', background: '#f8fafc' }}>
+                      <MonthYearSelector form={editForm} setForm={setEditForm} />
+
+                      <label style={{ display: 'block', fontSize: '13px', marginBottom: '8px', fontWeight: 600 }}>ค่าพลังงานแต่ละประเภท</label>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+                        {energyTypes.map((t) => (
+                          <div key={t.id}>
+                            <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>{t.energy_name} ({t.unit})</label>
+                            <input
+                              type="number"
+                              step="any"
+                              value={editForm.values[t.id] ?? ''}
+                              onChange={(e) => setEditForm({ ...editForm, values: { ...editForm.values, [t.id]: e.target.value } })}
+                              placeholder="0"
+                              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+
+                      <label style={{ display: 'block', fontSize: '13px', marginBottom: '8px', fontWeight: 600 }}>สัดส่วนการใช้ไฟฟ้าตามระบบ (kWh)</label>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', marginBottom: '12px' }}>
+                        {ELECTRICITY_SYSTEMS.map((s) => (
+                          <div key={s.key}>
+                            <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>{s.name}</label>
+                            <input
+                              type="number"
+                              step="any"
+                              value={editForm.breakdown[s.key] ?? ''}
+                              onChange={(e) => setEditForm({ ...editForm, breakdown: { ...editForm.breakdown, [s.key]: e.target.value } })}
+                              placeholder="0"
+                              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+
+                      <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>หมายเหตุ (ถ้ามี)</label>
+                      <input
+                        value={editForm.note}
+                        onChange={(e) => setEditForm({ ...editForm, note: e.target.value })}
+                        style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                      />
+
                       <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
                         <button onClick={handleUpdateEntry} disabled={saving} style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#22c55e', color: 'white', cursor: 'pointer' }}>
                           {saving ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
@@ -370,20 +564,21 @@ export default function EnergyDataPage() {
                   </tr>
                 ) : (
                   <tr key={entry.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '8px' }}>{entry.record_date}</td>
-                    <td style={{ padding: '8px' }}>{entry.period_label}</td>
+                    <td style={{ padding: '8px' }}>{entry.period_label || entry.record_date}</td>
                     <td style={{ padding: '8px' }}>
-                      {(entry.energy_values || [])
-                        .map((v) => `${v.energy_types?.energy_name}: ${v.value}${v.energy_types?.unit}`)
-                        .join(', ')}
+                      {(entry.energy_values || []).length > 0
+                        ? entry.energy_values.map((v) => `${v.energy_types?.energy_name}: ${v.value}${v.energy_types?.unit}`).join(', ')
+                        : '-'}
                     </td>
                     <td style={{ padding: '8px' }}>
-                      {(entry.electricity_breakdown || [])
-                        .map((b) => {
-                          const sys = ELECTRICITY_SYSTEMS.find((s) => s.key === b.system_key);
-                          return `${sys ? sys.name : b.system_key}: ${b.value}kWh`;
-                        })
-                        .join(', ')}
+                      {(entry.electricity_breakdown || []).length > 0
+                        ? entry.electricity_breakdown
+                            .map((b) => {
+                              const sys = ELECTRICITY_SYSTEMS.find((s) => s.key === b.system_key);
+                              return `${sys ? sys.name : b.system_key}: ${b.value}kWh`;
+                            })
+                            .join(', ')
+                        : '-'}
                     </td>
                     <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
                       <button onClick={() => startEdit(entry)} style={{ marginRight: '8px', padding: '4px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer' }}>
@@ -404,87 +599,49 @@ export default function EnergyDataPage() {
   );
 }
 
-// ฟอร์มย่อยที่ใช้ร่วมกันทั้งตอนเพิ่มและตอนแก้ไข
-function EntryFields({ form, setForm, energyTypes, hidePeriodType }) {
+// dropdown เลือกประเภทช่วงเวลา + เดือน (ถ้าเป็นรายเดือน) + ปี — ใช้ร่วมกันทั้ง 3 ฟอร์ม
+function MonthYearSelector({ form, setForm }) {
   return (
-    <>
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, minWidth: '140px' }}>
-          <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>วันที่บันทึก</label>
-          <input
-            type="date"
-            value={form.record_date}
-            onChange={(e) => setForm({ ...form, record_date: e.target.value })}
-            required
+    <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      <div style={{ minWidth: '140px' }}>
+        <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>ประเภทช่วงเวลา</label>
+        <select
+          value={form.period_type}
+          onChange={(e) => setForm({ ...form, period_type: e.target.value })}
+          style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+        >
+          <option value="monthly">รายเดือน</option>
+          <option value="yearly">รายปี</option>
+        </select>
+      </div>
+
+      {form.period_type === 'monthly' && (
+        <div style={{ minWidth: '140px' }}>
+          <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>เดือน</label>
+          <select
+            value={form.month}
+            onChange={(e) => setForm({ ...form, month: Number(e.target.value) })}
             style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
-          />
+          >
+            {MONTH_NAMES.map((name, i) => (
+              <option key={i} value={i + 1}>{name}</option>
+            ))}
+          </select>
         </div>
+      )}
 
-        {!hidePeriodType && (
-          <div style={{ flex: 1, minWidth: '140px' }}>
-            <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>ประเภทช่วงเวลา</label>
-            <select
-              value={form.period_type}
-              onChange={(e) => setForm({ ...form, period_type: e.target.value })}
-              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
-            >
-              <option value="monthly">รายเดือน</option>
-              <option value="yearly">รายปี</option>
-            </select>
-          </div>
-        )}
-
-        <div style={{ flex: 1, minWidth: '140px' }}>
-          <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>ป้ายกำกับ</label>
-          <input
-            value={form.period_label}
-            onChange={(e) => setForm({ ...form, period_label: e.target.value })}
-            placeholder='เช่น "ก.ย. 2569"'
-            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
-          />
-        </div>
+      <div style={{ minWidth: '140px' }}>
+        <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>ปี</label>
+        <select
+          value={form.year}
+          onChange={(e) => setForm({ ...form, year: Number(e.target.value) })}
+          style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+        >
+          {YEAR_OPTIONS.map((y) => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
       </div>
-
-      <label style={{ display: 'block', fontSize: '13px', marginBottom: '8px', fontWeight: 600 }}>ค่าพลังงานแต่ละประเภท</label>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', marginBottom: '16px' }}>
-        {energyTypes.map((t) => (
-          <div key={t.id}>
-            <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>{t.energy_name} ({t.unit})</label>
-            <input
-              type="number"
-              step="any"
-              value={form.values[t.id] ?? ''}
-              onChange={(e) => setForm({ ...form, values: { ...form.values, [t.id]: e.target.value } })}
-              placeholder="0"
-              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
-            />
-          </div>
-        ))}
-      </div>
-
-      <label style={{ display: 'block', fontSize: '13px', marginBottom: '8px', fontWeight: 600 }}>สัดส่วนการใช้ไฟฟ้าตามระบบ (kWh)</label>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', marginBottom: '12px' }}>
-        {ELECTRICITY_SYSTEMS.map((s) => (
-          <div key={s.key}>
-            <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>{s.name}</label>
-            <input
-              type="number"
-              step="any"
-              value={form.breakdown[s.key] ?? ''}
-              onChange={(e) => setForm({ ...form, breakdown: { ...form.breakdown, [s.key]: e.target.value } })}
-              placeholder="0"
-              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
-            />
-          </div>
-        ))}
-      </div>
-
-      <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>หมายเหตุ (ถ้ามี)</label>
-      <input
-        value={form.note}
-        onChange={(e) => setForm({ ...form, note: e.target.value })}
-        style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
-      />
-    </>
+    </div>
   );
 }
