@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import {
@@ -105,15 +104,6 @@ export default function DashboardPage() {
           <h1 style={{ fontSize: '28px', fontWeight: 700, margin: 0 }}>⚡ Factory Energy Management</h1>
           <p style={{ color: '#64748b', marginTop: '4px' }}>ภาพรวมการใช้พลังงานของโรงงาน</p>
         </div>
-        <Link
-          href="/energy-data"
-          style={{
-            background: '#3b82f6', color: 'white', textDecoration: 'none',
-            borderRadius: '8px', padding: '10px 18px', fontWeight: 600, display: 'inline-block',
-          }}
-        >
-          + กรอกข้อมูลพลังงาน
-        </Link>
       </div>
 
       {/* Toggle รายเดือน/รายปี */}
