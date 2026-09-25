@@ -180,17 +180,17 @@ export default function DashboardPage() {
   }
 
   // ---------- จัดการรายการที่เลือก ----------
-  function addSelection() {
+  function addSelection(month, year) {
     setSelected((prev) => {
       const list = prev[periodType];
       const exists =
         periodType === 'monthly'
-          ? list.some((p) => p.month === pickMonth && p.year === pickYear)
-          : list.some((p) => p.year === pickYear);
+          ? list.some((p) => p.month === month && p.year === year)
+          : list.some((p) => p.year === year);
 
       if (exists) return prev;
 
-      const newItem = periodType === 'monthly' ? { month: pickMonth, year: pickYear } : { year: pickYear };
+      const newItem = periodType === 'monthly' ? { month, year } : { year };
       return { ...prev, [periodType]: [...list, newItem] };
     });
   }
@@ -232,7 +232,7 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* dropdown เลือกเดือน/ปี ที่จะเพิ่มเข้ามาดูในกราฟ */}
+      {/* dropdown เลือกเดือน/ปี — เลือกแล้วเพิ่มเข้ากราฟทันที ไม่ต้องกดปุ่ม */}
       <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
           {periodType === 'monthly' && (
@@ -240,7 +240,11 @@ export default function DashboardPage() {
               <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>เดือน</label>
               <select
                 value={pickMonth}
-                onChange={(e) => setPickMonth(Number(e.target.value))}
+                onChange={(e) => {
+                  const month = Number(e.target.value);
+                  setPickMonth(month);
+                  addSelection(month, pickYear);
+                }}
                 style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
               >
                 {MONTH_NAMES.map((name, i) => (
@@ -253,7 +257,11 @@ export default function DashboardPage() {
             <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>ปี</label>
             <select
               value={pickYear}
-              onChange={(e) => setPickYear(Number(e.target.value))}
+              onChange={(e) => {
+                const year = Number(e.target.value);
+                setPickYear(year);
+                addSelection(pickMonth, year);
+              }}
               style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
             >
               {YEAR_OPTIONS.map((y) => (
@@ -261,18 +269,12 @@ export default function DashboardPage() {
               ))}
             </select>
           </div>
-          <button
-            onClick={addSelection}
-            style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#3b82f6', color: 'white', fontWeight: 600, cursor: 'pointer' }}
-          >
-            + เพิ่มเข้ากราฟ
-          </button>
         </div>
 
         {/* chip แสดงรายการที่เลือกไว้ ลบออกได้ทีละอัน */}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '14px' }}>
           {currentSelection.length === 0 ? (
-            <span style={{ color: '#94a3b8', fontSize: '13px' }}>ยังไม่ได้เลือกช่วงเวลา — เพิ่มอย่างน้อย 1 รายการเพื่อดูกราฟ</span>
+            <span style={{ color: '#94a3b8', fontSize: '13px' }}>ยังไม่ได้เลือกช่วงเวลา — เลือกเดือน/ปีด้านบนเพื่อดูกราฟ</span>
           ) : (
             currentSelection.map((p, i) => (
               <span
@@ -301,6 +303,7 @@ export default function DashboardPage() {
         <p>กำลังโหลดข้อมูล...</p>
       ) : (
         <>
+          {/* KPI Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '28px' }}>
             <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
               <div style={{ color: '#64748b', fontSize: '13px' }}>พลังงานรวมทุกประเภท</div>
@@ -318,6 +321,7 @@ export default function DashboardPage() {
             ))}
           </div>
 
+          {/* กราฟหลัก + Pie chart สัดส่วนไฟฟ้า วางคู่กัน */}
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: '20px', marginBottom: '20px' }}>
             <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
               <h3 style={{ marginTop: 0 }}>การใช้พลังงานตามช่วงเวลาที่เลือก</h3>
