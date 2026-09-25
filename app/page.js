@@ -5,6 +5,9 @@ import { supabase } from '../lib/supabaseClient';
 import {
   BarChart,
   Bar,
+  PieChart,
+  Pie,
+  Cell,
   XAxis,
   YAxis,
   Tooltip,
@@ -19,9 +22,19 @@ const PALETTE = [
   '#a855f7', '#06b6d4', '#ec4899', '#64748b',
 ];
 
+// รายชื่อระบบไฟฟ้าย่อย (ต้องตรงกับหน้า Energy Data)
+const ELECTRICITY_SYSTEMS = [
+  { key: 'cooling', name: 'Cooling System', color: '#3b82f6' },
+  { key: 'lighting', name: 'Lighting System', color: '#f59e0b' },
+  { key: 'production', name: 'Production System', color: '#22c55e' },
+  { key: 'air_conditioning', name: 'Air Conditioning System', color: '#a855f7' },
+  { key: 'others', name: 'Others', color: '#64748b' },
+];
+
 export default function DashboardPage() {
   const [energyTypes, setEnergyTypes] = useState([]);
   const [records, setRecords] = useState([]); // energy_data + nested energy_values
+  const [breakdown, setBreakdown] = useState([]); // [{key, name, color, value}]
   const [viewMode, setViewMode] = useState('monthly'); // ต้องตรงกับค่าที่ใช้เก็บใน period_type
   const [loading, setLoading] = useState(true);
 
@@ -31,6 +44,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchRecords();
+    fetchBreakdown();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode]);
 
@@ -68,8 +82,31 @@ export default function DashboardPage() {
     setLoading(false);
   }
 
+  // ดึงสัดส่วนไฟฟ้าตามระบบ รวมทุก record ในช่วงเวลาที่เลือก (รายเดือน/รายปี)
+  async function fetchBreakdown() {
+    const { data, error } = await supabase
+      .from('electricity_breakdown')
+      .select('system_key, value, energy_data!inner(period_type)')
+      .eq('energy_data.period_type', viewMode);
+
+    if (error) {
+      console.error(error);
+      setBreakdown([]);
+      return;
+    }
+
+    const totals = {};
+    ELECTRICITY_SYSTEMS.forEach((s) => { totals[s.key] = 0; });
+    (data || []).forEach((row) => {
+      if (totals[row.system_key] !== undefined) {
+        totals[row.system_key] += Number(row.value || 0);
+      }
+    });
+
+    setBreakdown(ELECTRICITY_SYSTEMS.map((s) => ({ ...s, value: totals[s.key] })));
+  }
+
   // แปลง records (energy_data + energy_values ซ้อนอยู่ข้างใน) ให้เป็นรูปแบบที่กราฟใช้ได้
-  // ผลลัพธ์: [{ key: period_label, 'ไฟฟ้า': 120, 'LPG': 30, ... }, ...]
   function buildChartData() {
     return records.map((r) => {
       const row = { key: r.period_label || r.record_date };
@@ -96,6 +133,7 @@ export default function DashboardPage() {
   }
 
   const chartData = buildChartData();
+  const breakdownTotal = breakdown.reduce((sum, b) => sum + b.value, 0);
 
   return (
     <div style={{ padding: '32px' }}>
@@ -146,27 +184,60 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          {/* กราฟหลัก */}
-          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
-            <h3 style={{ marginTop: 0 }}>การใช้พลังงาน{viewMode === 'monthly' ? 'รายเดือน' : 'รายปี'}</h3>
-            {chartData.length === 0 ? (
-              <p style={{ color: '#94a3b8' }}>
-                ยังไม่มีข้อมูลใน energy_data ที่ period_type = &quot;{viewMode}&quot; — ลองเพิ่มข้อมูลในตารางก่อน
-              </p>
-            ) : (
-              <ResponsiveContainer width="100%" height={320}>
-                <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="key" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  {energyTypes.map((t, i) => (
-                    <Bar key={t.id} dataKey={t.energy_name} fill={PALETTE[i % PALETTE.length]} radius={[4, 4, 0, 0]} />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            )}
+          {/* กราฟหลัก + Pie chart สัดส่วนไฟฟ้า วางคู่กัน */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: '20px', marginBottom: '20px' }}>
+            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
+              <h3 style={{ marginTop: 0 }}>การใช้พลังงาน{viewMode === 'monthly' ? 'รายเดือน' : 'รายปี'}</h3>
+              {chartData.length === 0 ? (
+                <p style={{ color: '#94a3b8' }}>
+                  ยังไม่มีข้อมูลใน energy_data ที่ period_type = &quot;{viewMode}&quot; — ลองเพิ่มข้อมูลในตารางก่อน
+                </p>
+              ) : (
+                <ResponsiveContainer width="100%" height={320}>
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="key" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    {energyTypes.map((t, i) => (
+                      <Bar key={t.id} dataKey={t.energy_name} fill={PALETTE[i % PALETTE.length]} radius={[4, 4, 0, 0]} />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
+              <h3 style={{ marginTop: 0 }}>สัดส่วนการใช้ไฟฟ้าตามระบบ</h3>
+              {breakdownTotal === 0 ? (
+                <p style={{ color: '#94a3b8' }}>
+                  ยังไม่มีข้อมูลสัดส่วนไฟฟ้า — เพิ่มได้ที่หน้า Energy Data
+                </p>
+              ) : (
+                <ResponsiveContainer width="100%" height={320}>
+                  <PieChart>
+                    <Pie
+                      data={breakdown}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={110}
+                      label={({ name, value, percent }) =>
+                        `${name}: ${(percent * 100).toFixed(1)}% (${value.toLocaleString()} kWh)`
+                      }
+                    >
+                      {breakdown.map((b) => (
+                        <Cell key={b.key} fill={b.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value) => `${Number(value).toLocaleString()} kWh`} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </div>
           </div>
         </>
       )}
