@@ -94,7 +94,6 @@ function periodToLabel(periodType, month, year) {
   return `${MONTH_NAMES[month - 1]} ${year}`;
 }
 
-// วาดป้าย % ส่วนต่างเหนือแท่งกราฟ
 function ChangeBarLabel({
   x,
   y,
@@ -106,8 +105,11 @@ function ChangeBarLabel({
     return null;
   }
 
-  const cur = series[index]?.value ?? 0;
-  const prev = series[index - 1]?.value ?? 0;
+  const cur =
+    series[index]?.value ?? 0;
+
+  const prev =
+    series[index - 1]?.value ?? 0;
 
   const diff = cur - prev;
 
@@ -145,42 +147,52 @@ function ChangeBarLabel({
 }
 
 export default function DashboardPage() {
-  const [energyTypes, setEnergyTypes] = useState([]);
-  const [records, setRecords] = useState([]);
-  const [breakdown, setBreakdown] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [energyTypes, setEnergyTypes] =
+    useState([]);
+
+  const [records, setRecords] =
+    useState([]);
+
+  const [breakdown, setBreakdown] =
+    useState([]);
+
+  const [loading, setLoading] =
+    useState(true);
 
   const [periodType, setPeriodType] =
     useState('monthly');
 
-  // ตัวเลือกที่กำลังจะเพิ่ม
   const [pickMonth, setPickMonth] =
-    useState(new Date().getMonth() + 1);
+    useState(
+      new Date().getMonth() + 1
+    );
 
   const [pickYear, setPickYear] =
     useState(CURRENT_YEAR);
 
-  // รายการช่วงเวลาที่เลือก
-  const [selected, setSelected] = useState({
-    monthly: [
-      {
-        month: new Date().getMonth() + 1,
-        year: CURRENT_YEAR,
-      },
-    ],
-    yearly: [
-      {
-        year: CURRENT_YEAR,
-      },
-    ],
-  });
+  const [selected, setSelected] =
+    useState({
+      monthly: [
+        {
+          month:
+            new Date().getMonth() + 1,
+          year: CURRENT_YEAR,
+        },
+      ],
+      yearly: [
+        {
+          year: CURRENT_YEAR,
+        },
+      ],
+    });
 
   const currentSelection =
     selected[periodType];
 
-  // ประเภทพลังงานที่เปิดกราฟขยาย
-  const [expandedTypeId, setExpandedTypeId] =
-    useState(null);
+  const [
+    expandedTypeId,
+    setExpandedTypeId,
+  ] = useState(null);
 
   useEffect(() => {
     fetchEnergyTypes();
@@ -194,7 +206,10 @@ export default function DashboardPage() {
   }, [periodType, selected]);
 
   async function fetchEnergyTypes() {
-    const { data, error } = await supabase
+    const {
+      data,
+      error,
+    } = await supabase
       .from('energy_types')
       .select('*')
       .eq('is_active', true)
@@ -208,23 +223,25 @@ export default function DashboardPage() {
   }
 
   function selectedDates() {
-    return currentSelection.map((p) =>
-      periodType === 'yearly'
-        ? periodToDate(
-            'yearly',
-            null,
-            p.year
-          )
-        : periodToDate(
-            'monthly',
-            p.month,
-            p.year
-          )
+    return currentSelection.map(
+      (p) =>
+        periodType === 'yearly'
+          ? periodToDate(
+              'yearly',
+              null,
+              p.year
+            )
+          : periodToDate(
+              'monthly',
+              p.month,
+              p.year
+            )
     );
   }
 
   async function fetchRecords() {
-    const dates = selectedDates();
+    const dates =
+      selectedDates();
 
     if (dates.length === 0) {
       setRecords([]);
@@ -255,21 +272,37 @@ export default function DashboardPage() {
           )
         )
       `)
-      .eq('period_type', periodType)
-      .in('record_date', dates)
-      .order('record_date', {
-        ascending: true,
-      });
+      .eq(
+        'period_type',
+        periodType
+      )
+      .in(
+        'record_date',
+        dates
+      )
+      .order(
+        'record_date',
+        {
+          ascending: true,
+        }
+      );
 
     if (!error) {
       setRecords(data || []);
+    } else {
+      console.error(
+        'fetchRecords error:',
+        error
+      );
+      setRecords([]);
     }
 
     setLoading(false);
   }
 
   async function fetchBreakdown() {
-    const dates = selectedDates();
+    const dates =
+      selectedDates();
 
     if (dates.length === 0) {
       setBreakdown([]);
@@ -280,7 +313,9 @@ export default function DashboardPage() {
       data,
       error,
     } = await supabase
-      .from('electricity_breakdown')
+      .from(
+        'electricity_breakdown'
+      )
       .select(
         'system_key, value, energy_data!inner(record_date, period_type)'
       )
@@ -301,220 +336,390 @@ export default function DashboardPage() {
 
     const totals = {};
 
-    ELECTRICITY_SYSTEMS.forEach((s) => {
-      totals[s.key] = 0;
-    });
-
-    (data || []).forEach((row) => {
-      if (
-        totals[row.system_key] !==
-        undefined
-      ) {
-        totals[row.system_key] +=
-          Number(row.value || 0);
+    ELECTRICITY_SYSTEMS.forEach(
+      (s) => {
+        totals[s.key] = 0;
       }
-    });
+    );
+
+    (data || []).forEach(
+      (row) => {
+        if (
+          totals[row.system_key] !==
+          undefined
+        ) {
+          totals[row.system_key] +=
+            Number(
+              row.value || 0
+            );
+        }
+      }
+    );
 
     setBreakdown(
-      ELECTRICITY_SYSTEMS.map((s) => ({
-        ...s,
-        value: totals[s.key],
-      }))
+      ELECTRICITY_SYSTEMS.map(
+        (s) => ({
+          ...s,
+          value:
+            totals[s.key],
+        })
+      )
     );
   }
 
   function buildChartData() {
-    return records.map((r) => {
-      const row = {
-        key:
-          r.period_label ||
-          r.record_date,
-      };
+    return records.map(
+      (r) => {
+        const row = {
+          key:
+            r.period_label ||
+            r.record_date,
+        };
 
-      (r.energy_values || []).forEach(
-        (v) => {
+        (
+          r.energy_values || []
+        ).forEach((v) => {
           const typeName =
-            v.energy_types?.energy_name ||
+            v.energy_types
+              ?.energy_name ||
             'ไม่ทราบ';
 
           row[typeName] =
-            Number(v.value || 0);
-        }
-      );
+            Number(
+              v.value || 0
+            );
+        });
 
-      return row;
-    });
+        return row;
+      }
+    );
   }
 
   /*
-    =====================================================
-    จุดสำคัญ
+   ============================================================
+   สร้างข้อมูลกราฟ
 
-    รายเดือน:
-    ถ้าเลือก
+   รายเดือน:
 
-    ม.ค. 2568
-    ม.ค. 2569
-    ก.พ. 2568
-    ก.พ. 2569
+   ถ้าเลือก
 
-    จะกลายเป็น
+   ม.ค. 2568
+   ม.ค. 2569
+   ก.พ. 2568
+   ก.พ. 2569
 
-             ม.ค.        ก.พ.
-          2568 2569   2568 2569
-            █    █       █    █
+   จะได้ข้อมูลเป็น
 
-    แกน X มี ม.ค. และ ก.พ. อย่างละ 1 ครั้ง
-    =====================================================
+   [
+     {
+       key: 'ม.ค.',
+       year_2568: xxx,
+       year_2569: xxx
+     },
+     {
+       key: 'ก.พ.',
+       year_2568: xxx,
+       year_2569: xxx
+     }
+   ]
+
+   ทำให้ชื่อเดือนบนแกน X ไม่ซ้ำ
+   ============================================================
   */
 
   function typeSeries(t) {
-    // รายปีใช้รูปแบบเดิม
-    if (periodType !== 'monthly') {
-      return chartData.map((row) => ({
-        key: row.key,
-        value: Number(
-          row[t.energy_name] || 0
-        ),
-      }));
+    /*
+     -------------------------
+     รายปี
+     -------------------------
+    */
+
+    if (
+      periodType !== 'monthly'
+    ) {
+      return chartData.map(
+        (row) => ({
+          key: row.key,
+          value: Number(
+            row[
+              t.energy_name
+            ] || 0
+          ),
+        })
+      );
     }
 
-    // หาเฉพาะปีที่เลือก
+    /*
+     -------------------------
+     รายเดือน
+     -------------------------
+    */
+
     const years = [
       ...new Set(
         currentSelection.map(
-          (p) => Number(p.year)
+          (p) =>
+            Number(p.year)
         )
       ),
     ].sort(
-      (a, b) => a - b
+      (a, b) =>
+        a - b
+    );
+
+    const monthRows =
+      new Map();
+
+    records.forEach(
+      (record) => {
+        const date =
+          String(
+            record.record_date ||
+              ''
+          );
+
+        /*
+          รองรับทั้ง
+
+          2025-01-01
+          2025-01-01T00:00:00
+        */
+        const datePart =
+          date.split('T')[0];
+
+        const parts =
+          datePart.split('-');
+
+        if (
+          parts.length <
+          2
+        ) {
+          return;
+        }
+
+        const year =
+          Number(
+            parts[0]
+          );
+
+        const month =
+          Number(
+            parts[1]
+          );
+
+        if (
+          !year ||
+          !month ||
+          month < 1 ||
+          month > 12
+        ) {
+          return;
+        }
+
+        /*
+          จับคู่ประเภทพลังงานแบบปลอดภัย
+          รองรับกรณี id เป็น number/string
+        */
+
+        const valueRow =
+          (
+            record.energy_values ||
+            []
+          ).find(
+            (v) =>
+              String(
+                v.energy_type_id
+              ) ===
+              String(t.id)
+          );
+
+        /*
+          ถ้าจับด้วย id ไม่ได้
+          ลองจับด้วย energy_key / energy_name
+        */
+
+        let value =
+          valueRow
+            ? Number(
+                valueRow.value ||
+                  0
+              )
+            : null;
+
+        if (
+          value === null
+        ) {
+          const fallbackRow =
+            (
+              record.energy_values ||
+              []
+            ).find(
+              (v) => {
+                const rowType =
+                  v.energy_types;
+
+                return (
+                  rowType &&
+                  (
+                    rowType.energy_key ===
+                      t.energy_key ||
+                    rowType.energy_name ===
+                      t.energy_name
+                  )
+                );
+              }
+            );
+
+          if (
+            fallbackRow
+          ) {
+            value =
+              Number(
+                fallbackRow.value ||
+                  0
+              );
+          }
+        }
+
+        if (
+          value === null
+        ) {
+          value = 0;
+        }
+
+        /*
+          ถ้ายังไม่มีเดือนนี้
+          ให้สร้างแถวใหม่
+        */
+
+        if (
+          !monthRows.has(
+            month
+          )
+        ) {
+          const row = {
+            month,
+            key:
+              MONTH_NAMES[
+                month - 1
+              ],
+          };
+
+          years.forEach(
+            (year) => {
+              row[
+                `year_${year}`
+              ] = 0;
+            }
+          );
+
+          monthRows.set(
+            month,
+            row
+          );
+        }
+
+        /*
+          ใส่ค่าของปีนั้น
+        */
+
+        monthRows.get(
+          month
+        )[
+          `year_${year}`
+        ] = value;
+      }
     );
 
     /*
-      monthRows จะเก็บข้อมูลโดยใช้ "เดือน"
-      เป็นตัวหลัก
-
-      เช่น
-
-      1 -> ม.ค.
-      2 -> ก.พ.
-
-      แล้วข้างในมี
-
-      year_2568
-      year_2569
+      เรียงเดือน
+      ม.ค. -> ธ.ค.
     */
-    const monthRows = new Map();
 
-    records.forEach((record) => {
-      const date = String(
-        record.record_date || ''
-      );
-
-      const year = Number(
-        date.slice(0, 4)
-      );
-
-      const month = Number(
-        date.slice(5, 7)
-      );
-
-      if (
-        !year ||
-        month < 1 ||
-        month > 12
-      ) {
-        return;
-      }
-
-      const valueRow =
-        (record.energy_values || []).find(
-          (v) =>
-            v.energy_type_id === t.id
-        );
-
-      const value = Number(
-        valueRow?.value || 0
-      );
-
-      // ถ้ายังไม่มีเดือนนี้ ให้สร้างใหม่
-      if (!monthRows.has(month)) {
-        const row = {
-          month,
-          key: MONTH_NAMES[month - 1],
-        };
-
-        // สร้างช่องของทุกปีที่เลือก
-        years.forEach((y) => {
-          row[`year_${y}`] = 0;
-        });
-
-        monthRows.set(
-          month,
-          row
-        );
-      }
-
-      // ใส่ค่าของปีนั้น
-      monthRows.get(month)[
-        `year_${year}`
-      ] = value;
-    });
-
-    /*
-      เรียงเดือนจาก ม.ค. -> ธ.ค.
-    */
     return [
       ...monthRows.values(),
     ].sort(
       (a, b) =>
-        a.month - b.month
+        a.month -
+        b.month
     );
   }
 
-  // ปีที่เลือกทั้งหมด
+  /*
+    ปีที่เลือกในกราฟ
+  */
+
   function chartYears() {
+    if (
+      periodType !==
+      'monthly'
+    ) {
+      return [];
+    }
+
     return [
       ...new Set(
         currentSelection.map(
-          (p) => Number(p.year)
+          (p) =>
+            Number(p.year)
         )
       ),
     ].sort(
-      (a, b) => a - b
+      (a, b) =>
+        a - b
     );
   }
 
-  // ข้อมูลของปีใดปีหนึ่ง
+  /*
+    เอาข้อมูลของปีใดปีหนึ่ง
+    สำหรับคำนวณ % เปลี่ยนแปลง
+  */
+
   function yearSeries(
     series,
     year
   ) {
-    const key = `year_${year}`;
+    const key =
+      `year_${year}`;
 
-    return series.map((row) => ({
-      key: row.key,
-      value: Number(
-        row[key] || 0
-      ),
-    }));
+    return series.map(
+      (row) => ({
+        key: row.key,
+        value: Number(
+          row[key] || 0
+        ),
+      })
+    );
   }
 
-  function totalForType(typeId) {
+  function totalForType(
+    typeId
+  ) {
     return records.reduce(
-      (sum, r) => {
+      (
+        sum,
+        r
+      ) => {
         const match =
-          (r.energy_values || []).find(
+          (
+            r.energy_values ||
+            []
+          ).find(
             (v) =>
-              v.energy_type_id ===
-              typeId
+              String(
+                v.energy_type_id
+              ) ===
+              String(
+                typeId
+              )
           );
 
         return (
           sum +
           (match
             ? Number(
-                match.value || 0
+                match.value ||
+                  0
               )
             : 0)
         );
@@ -525,91 +730,122 @@ export default function DashboardPage() {
 
   function grandTotal() {
     return records.reduce(
-      (sum, r) => {
+      (
+        sum,
+        r
+      ) => {
         const sub =
-          (r.energy_values || []).reduce(
-            (s, v) =>
+          (
+            r.energy_values ||
+            []
+          ).reduce(
+            (
+              s,
+              v
+            ) =>
               s +
               Number(
-                v.value || 0
+                v.value ||
+                  0
               ),
             0
           );
 
-        return sum + sub;
+        return (
+          sum + sub
+        );
       },
       0
     );
   }
 
-  // เพิ่มช่วงเวลาที่เลือก
+  /*
+   ============================================================
+   เพิ่มรายการที่เลือก
+   ============================================================
+  */
+
   function addSelection(
     month,
     year
   ) {
-    setSelected((prev) => {
-      const list =
-        prev[periodType];
+    setSelected(
+      (prev) => {
+        const list =
+          prev[
+            periodType
+          ];
 
-      const exists =
-        periodType ===
-        'monthly'
-          ? list.some(
-              (p) =>
-                p.month ===
-                  month &&
-                p.year ===
+        const exists =
+          periodType ===
+          'monthly'
+            ? list.some(
+                (p) =>
+                  p.month ===
+                    month &&
+                  p.year ===
+                    year
+              )
+            : list.some(
+                (p) =>
+                  p.year ===
                   year
-            )
-          : list.some(
-              (p) =>
-                p.year ===
-                year
-            );
+              );
 
-      if (exists) {
-        return prev;
+        if (
+          exists
+        ) {
+          return prev;
+        }
+
+        const newItem =
+          periodType ===
+          'monthly'
+            ? {
+                month,
+                year,
+              }
+            : {
+                year,
+              };
+
+        return {
+          ...prev,
+          [periodType]: [
+            ...list,
+            newItem,
+          ],
+        };
       }
-
-      const newItem =
-        periodType ===
-        'monthly'
-          ? {
-              month,
-              year,
-            }
-          : {
-              year,
-            };
-
-      return {
-        ...prev,
-        [periodType]: [
-          ...list,
-          newItem,
-        ],
-      };
-    });
+    );
   }
 
-  // ลบช่วงเวลาที่เลือก
+  /*
+   ============================================================
+   ลบรายการที่เลือก
+   ============================================================
+  */
+
   function removeSelection(
     idx
   ) {
-    setSelected((prev) => {
-      const list =
-        prev[
-          periodType
-        ].filter(
-          (_, i) =>
-            i !== idx
-        );
+    setSelected(
+      (prev) => {
+        const list =
+          prev[
+            periodType
+          ].filter(
+            (_, i) =>
+              i !== idx
+          );
 
-      return {
-        ...prev,
-        [periodType]: list,
-      };
-    });
+        return {
+          ...prev,
+          [periodType]:
+            list,
+        };
+      }
+    );
   }
 
   const chartData =
@@ -618,21 +854,24 @@ export default function DashboardPage() {
   const breakdownTotal =
     breakdown.reduce(
       (sum, b) =>
-        sum + b.value,
+        sum +
+        b.value,
       0
     );
 
   return (
     <div
       style={{
-        padding: '32px',
+        padding:
+          '32px',
       }}
     >
       {/* HEADER */}
 
       <div
         style={{
-          display: 'flex',
+          display:
+            'flex',
           justifyContent:
             'space-between',
           alignItems:
@@ -646,7 +885,8 @@ export default function DashboardPage() {
             style={{
               fontSize:
                 '28px',
-              fontWeight: 700,
+              fontWeight:
+                700,
               margin: 0,
             }}
           >
@@ -671,8 +911,10 @@ export default function DashboardPage() {
 
       <div
         style={{
-          display: 'flex',
-          gap: '8px',
+          display:
+            'flex',
+          gap:
+            '8px',
           marginBottom:
             '16px',
         }}
@@ -683,7 +925,9 @@ export default function DashboardPage() {
         ].map(
           (mode) => (
             <button
-              key={mode}
+              key={
+                mode
+              }
               onClick={() =>
                 setPeriodType(
                   mode
@@ -721,7 +965,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ตัวเลือกเดือน / ปี */}
+      {/* เลือกเดือน / ปี */}
 
       <div
         style={{
@@ -741,7 +985,8 @@ export default function DashboardPage() {
           style={{
             display:
               'flex',
-            gap: '12px',
+            gap:
+              '12px',
             alignItems:
               'flex-end',
             flexWrap:
@@ -801,7 +1046,9 @@ export default function DashboardPage() {
                     i
                   ) => (
                     <option
-                      key={i}
+                      key={
+                        i
+                      }
                       value={
                         i + 1
                       }
@@ -862,8 +1109,12 @@ export default function DashboardPage() {
               {YEAR_OPTIONS.map(
                 (y) => (
                   <option
-                    key={y}
-                    value={y}
+                    key={
+                      y
+                    }
+                    value={
+                      y
+                    }
                   >
                     {y}
                   </option>
@@ -879,7 +1130,8 @@ export default function DashboardPage() {
           style={{
             display:
               'flex',
-            gap: '8px',
+            gap:
+              '8px',
             flexWrap:
               'wrap',
             marginTop:
@@ -906,13 +1158,16 @@ export default function DashboardPage() {
                 i
               ) => (
                 <span
-                  key={i}
+                  key={
+                    i
+                  }
                   style={{
                     display:
                       'inline-flex',
                     alignItems:
                       'center',
-                    gap: '6px',
+                    gap:
+                      '6px',
                     background:
                       '#eff6ff',
                     color:
@@ -983,7 +1238,8 @@ export default function DashboardPage() {
                 'grid',
               gridTemplateColumns:
                 'repeat(auto-fit, minmax(200px, 1fr))',
-              gap: '16px',
+              gap:
+                '16px',
               marginBottom:
                 '28px',
             }}
@@ -1101,7 +1357,7 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* กราฟแยกตามประเภทพลังงาน */}
+          {/* กราฟ */}
 
           <div
             style={{
@@ -1111,7 +1367,8 @@ export default function DashboardPage() {
           >
             <h3
               style={{
-                marginTop: 0,
+                marginTop:
+                  0,
                 marginBottom:
                   '12px',
               }}
@@ -1138,7 +1395,8 @@ export default function DashboardPage() {
                   style={{
                     color:
                       '#94a3b8',
-                    margin: 0,
+                    margin:
+                      0,
                   }}
                 >
                   ไม่มีข้อมูลใน
@@ -1154,7 +1412,8 @@ export default function DashboardPage() {
                     'grid',
                   gridTemplateColumns:
                     'repeat(auto-fit, minmax(360px, 1fr))',
-                  gap: '16px',
+                  gap:
+                    '16px',
                 }}
               >
                 {energyTypes.map(
@@ -1205,7 +1464,8 @@ export default function DashboardPage() {
                         >
                           <h4
                             style={{
-                              margin: 0,
+                              margin:
+                                0,
                               fontSize:
                                 '15px',
                             }}
@@ -1225,6 +1485,7 @@ export default function DashboardPage() {
                               e
                             ) => {
                               e.stopPropagation();
+
                               setExpandedTypeId(
                                 t.id
                               );
@@ -1259,11 +1520,12 @@ export default function DashboardPage() {
                               series
                             }
                             margin={{
-                              top: 24,
+                              top: 32,
                               right: 10,
                               left: 0,
-                              bottom: 0,
+                              bottom: 10,
                             }}
+                            barCategoryGap="20%"
                           >
                             <CartesianGrid
                               strokeDasharray="3 3"
@@ -1321,18 +1583,7 @@ export default function DashboardPage() {
                             {periodType ===
                             'monthly' ? (
                               <>
-                                {/* Legend แสดงว่าสีไหนเป็นปีอะไร */}
-
-                                <Legend
-                                  formatter={(
-                                    value
-                                  ) =>
-                                    value.replace(
-                                      'year_',
-                                      'ปี '
-                                    )
-                                  }
-                                />
+                                <Legend />
 
                                 {chartYears().map(
                                   (
@@ -1442,8 +1693,7 @@ export default function DashboardPage() {
                 ป้าย ▲/▼
                 เหนือแต่ละแท่ง
                 คือส่วนต่าง %
-                เทียบกับช่วงก่อนหน้า
-                ในรายการที่เลือกไว้
+                เทียบกับแท่งก่อนหน้าในรายการที่เลือกไว้
                 — คลิกที่การ์ดเพื่อขยายดูแบบเต็ม
               </p>
             )}
@@ -1467,7 +1717,8 @@ export default function DashboardPage() {
           >
             <h3
               style={{
-                marginTop: 0,
+                marginTop:
+                  0,
               }}
             >
               สัดส่วนการใช้ไฟฟ้าตามระบบ
@@ -1487,7 +1738,9 @@ export default function DashboardPage() {
             ) : (
               <ResponsiveContainer
                 width="100%"
-                height={320}
+                height={
+                  320
+                }
               >
                 <PieChart>
                   <Pie
@@ -1631,7 +1884,8 @@ export default function DashboardPage() {
                 >
                   <h3
                     style={{
-                      margin: 0,
+                      margin:
+                        0,
                     }}
                   >
                     {
@@ -1695,11 +1949,12 @@ export default function DashboardPage() {
                           series
                         }
                         margin={{
-                          top: 32,
+                          top: 40,
                           right: 20,
                           left: 0,
-                          bottom: 0,
+                          bottom: 10,
                         }}
+                        barCategoryGap="18%"
                       >
                         <CartesianGrid
                           strokeDasharray="3 3"
@@ -1757,16 +2012,7 @@ export default function DashboardPage() {
                         {periodType ===
                         'monthly' ? (
                           <>
-                            <Legend
-                              formatter={(
-                                value
-                              ) =>
-                                value.replace(
-                                  'year_',
-                                  'ปี '
-                                )
-                              }
-                            />
+                            <Legend />
 
                             {chartYears().map(
                               (
@@ -1870,7 +2116,6 @@ export default function DashboardPage() {
                         ป้าย ▲/▼
                         คือส่วนต่าง %
                         เทียบกับแท่งก่อนหน้าในรายการที่เลือกไว้
-                        (เรียงตามวันที่)
                       </p>
                     )}
                   </>
