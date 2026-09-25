@@ -31,8 +31,8 @@ const ELECTRICITY_SYSTEMS = [
 ];
 
 const MONTH_NAMES = [
-  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
-  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
+  'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+  'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.',
 ];
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -51,15 +51,26 @@ function periodToLabel(periodType, month, year) {
 // วาดป้าย % ส่วนต่าง เหนือแท่งกราฟแต่ละแท่ง เทียบกับแท่งก่อนหน้าใน series เดียวกัน
 function ChangeBarLabel({ x, y, width, index, series }) {
   if (!series || index === 0) return null;
+
   const cur = series[index]?.value ?? 0;
   const prev = series[index - 1]?.value ?? 0;
   const diff = cur - prev;
+
   if (diff === 0) return null;
+
   const percent = prev === 0 ? 100 : (diff / prev) * 100;
   const color = diff > 0 ? '#16a34a' : '#dc2626';
   const arrow = diff > 0 ? '▲' : '▼';
+
   return (
-    <text x={x + width / 2} y={y - 8} textAnchor="middle" fontSize={11} fontWeight={700} fill={color}>
+    <text
+      x={x + width / 2}
+      y={y - 8}
+      textAnchor="middle"
+      fontSize={11}
+      fontWeight={700}
+      fill={color}
+    >
       {arrow} {Math.abs(percent).toFixed(1)}%
     </text>
   );
@@ -71,21 +82,30 @@ export default function DashboardPage() {
   const [breakdown, setBreakdown] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const [periodType, setPeriodType] = useState('monthly'); // 'monthly' | 'yearly'
+  const [periodType, setPeriodType] = useState('monthly');
 
   // ตัวเลือกที่กำลังจะเพิ่มใน dropdown
   const [pickMonth, setPickMonth] = useState(new Date().getMonth() + 1);
   const [pickYear, setPickYear] = useState(CURRENT_YEAR);
 
-  // รายการช่วงเวลาที่ถูกเลือกไว้ แยกเก็บของ monthly / yearly คนละชุด สลับโหมดแล้วไม่หาย
+  // รายการช่วงเวลาที่ถูกเลือกไว้ แยกเก็บของ monthly / yearly คนละชุด
   const [selected, setSelected] = useState({
-    monthly: [{ month: new Date().getMonth() + 1, year: CURRENT_YEAR }],
-    yearly: [{ year: CURRENT_YEAR }],
+    monthly: [
+      {
+        month: new Date().getMonth() + 1,
+        year: CURRENT_YEAR,
+      },
+    ],
+    yearly: [
+      {
+        year: CURRENT_YEAR,
+      },
+    ],
   });
 
   const currentSelection = selected[periodType];
 
-  // id ของประเภทพลังงานที่กำลังเปิดดูแบบขยาย (modal), null = ไม่ได้เปิด
+  // id ของประเภทพลังงานที่กำลังเปิดดูแบบขยาย
   const [expandedTypeId, setExpandedTypeId] = useState(null);
 
   useEffect(() => {
@@ -105,22 +125,28 @@ export default function DashboardPage() {
       .eq('is_active', true)
       .order('id', { ascending: true });
 
-    if (!error) setEnergyTypes(data || []);
+    if (!error) {
+      setEnergyTypes(data || []);
+    }
   }
 
   function selectedDates() {
     return currentSelection.map((p) =>
-      periodType === 'yearly' ? periodToDate('yearly', null, p.year) : periodToDate('monthly', p.month, p.year)
+      periodType === 'yearly'
+        ? periodToDate('yearly', null, p.year)
+        : periodToDate('monthly', p.month, p.year)
     );
   }
 
   async function fetchRecords() {
     const dates = selectedDates();
+
     if (dates.length === 0) {
       setRecords([]);
       setLoading(false);
       return;
     }
+
     setLoading(true);
 
     const { data, error } = await supabase
@@ -134,19 +160,27 @@ export default function DashboardPage() {
         energy_values (
           value,
           energy_type_id,
-          energy_types ( energy_name, energy_key, unit )
+          energy_types (
+            energy_name,
+            energy_key,
+            unit
+          )
         )
       `)
       .eq('period_type', periodType)
       .in('record_date', dates)
       .order('record_date', { ascending: true });
 
-    if (!error) setRecords(data || []);
+    if (!error) {
+      setRecords(data || []);
+    }
+
     setLoading(false);
   }
 
   async function fetchBreakdown() {
     const dates = selectedDates();
+
     if (dates.length === 0) {
       setBreakdown([]);
       return;
@@ -154,7 +188,9 @@ export default function DashboardPage() {
 
     const { data, error } = await supabase
       .from('electricity_breakdown')
-      .select('system_key, value, energy_data!inner(record_date, period_type)')
+      .select(
+        'system_key, value, energy_data!inner(record_date, period_type)'
+      )
       .eq('energy_data.period_type', periodType)
       .in('energy_data.record_date', dates);
 
@@ -165,42 +201,67 @@ export default function DashboardPage() {
     }
 
     const totals = {};
-    ELECTRICITY_SYSTEMS.forEach((s) => { totals[s.key] = 0; });
+
+    ELECTRICITY_SYSTEMS.forEach((s) => {
+      totals[s.key] = 0;
+    });
+
     (data || []).forEach((row) => {
       if (totals[row.system_key] !== undefined) {
         totals[row.system_key] += Number(row.value || 0);
       }
     });
 
-    setBreakdown(ELECTRICITY_SYSTEMS.map((s) => ({ ...s, value: totals[s.key] })));
+    setBreakdown(
+      ELECTRICITY_SYSTEMS.map((s) => ({
+        ...s,
+        value: totals[s.key],
+      }))
+    );
   }
 
   function buildChartData() {
     return records.map((r) => {
-      const row = { key: r.period_label || r.record_date };
+      const row = {
+        key: r.period_label || r.record_date,
+      };
+
       (r.energy_values || []).forEach((v) => {
-        const typeName = v.energy_types?.energy_name || 'ไม่ทราบ';
+        const typeName =
+          v.energy_types?.energy_name || 'ไม่ทราบ';
+
         row[typeName] = Number(v.value || 0);
       });
+
       return row;
     });
   }
 
-  // ค่าของประเภทพลังงานหนึ่งๆ เรียงตามช่วงเวลาที่เลือก (ใช้ทำกราฟย่อย + ป้ายส่วนต่างรายจุด)
+  // ค่าของประเภทพลังงานหนึ่งๆ เรียงตามช่วงเวลาที่เลือก
   function typeSeries(t) {
-    return chartData.map((row) => ({ key: row.key, value: Number(row[t.energy_name] || 0) }));
+    return chartData.map((row) => ({
+      key: row.key,
+      value: Number(row[t.energy_name] || 0),
+    }));
   }
 
   function totalForType(typeId) {
     return records.reduce((sum, r) => {
-      const match = (r.energy_values || []).find((v) => v.energy_type_id === typeId);
+      const match = (r.energy_values || []).find(
+        (v) => v.energy_type_id === typeId
+      );
+
       return sum + (match ? Number(match.value || 0) : 0);
     }, 0);
   }
 
   function grandTotal() {
     return records.reduce((sum, r) => {
-      const sub = (r.energy_values || []).reduce((s, v) => s + Number(v.value || 0), 0);
+      const sub = (r.energy_values || []).reduce(
+        (s, v) => s + Number(v.value || 0),
+        0
+      );
+
       return sum + sub;
     }, 0);
   }
@@ -209,112 +270,270 @@ export default function DashboardPage() {
   function addSelection(month, year) {
     setSelected((prev) => {
       const list = prev[periodType];
+
       const exists =
         periodType === 'monthly'
-          ? list.some((p) => p.month === month && p.year === year)
+          ? list.some(
+              (p) => p.month === month && p.year === year
+            )
           : list.some((p) => p.year === year);
 
-      if (exists) return prev;
+      if (exists) {
+        return prev;
+      }
 
-      const newItem = periodType === 'monthly' ? { month, year } : { year };
-      return { ...prev, [periodType]: [...list, newItem] };
+      const newItem =
+        periodType === 'monthly'
+          ? { month, year }
+          : { year };
+
+      return {
+        ...prev,
+        [periodType]: [...list, newItem],
+      };
     });
   }
 
   function removeSelection(idx) {
     setSelected((prev) => {
-      const list = prev[periodType].filter((_, i) => i !== idx);
-      return { ...prev, [periodType]: list };
+      const list = prev[periodType].filter(
+        (_, i) => i !== idx
+      );
+
+      return {
+        ...prev,
+        [periodType]: list,
+      };
     });
   }
 
   const chartData = buildChartData();
-  const breakdownTotal = breakdown.reduce((sum, b) => sum + b.value, 0);
+
+  const breakdownTotal = breakdown.reduce(
+    (sum, b) => sum + b.value,
+    0
+  );
 
   return (
     <div style={{ padding: '32px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '24px',
+        }}
+      >
         <div>
-          <h1 style={{ fontSize: '28px', fontWeight: 700, margin: 0 }}>⚡ Factory Energy Management</h1>
-          <p style={{ color: '#64748b', marginTop: '4px' }}>ภาพรวมการใช้พลังงานของโรงงาน</p>
+          <h1
+            style={{
+              fontSize: '28px',
+              fontWeight: 700,
+              margin: 0,
+            }}
+          >
+            ⚡ Factory Energy Management
+          </h1>
+
+          <p
+            style={{
+              color: '#64748b',
+              marginTop: '4px',
+            }}
+          >
+            ภาพรวมการใช้พลังงานของโรงงาน
+          </p>
         </div>
       </div>
 
       {/* เลือกโหมด รายเดือน/รายปี */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: '8px',
+          marginBottom: '16px',
+        }}
+      >
         {['monthly', 'yearly'].map((mode) => (
           <button
             key={mode}
             onClick={() => setPeriodType(mode)}
             style={{
-              padding: '8px 16px', borderRadius: '6px', border: '1px solid #e2e8f0',
-              background: periodType === mode ? '#1e293b' : 'white',
-              color: periodType === mode ? 'white' : '#1e293b',
-              cursor: 'pointer', fontWeight: 500,
+              padding: '8px 16px',
+              borderRadius: '6px',
+              border: '1px solid #e2e8f0',
+              background:
+                periodType === mode
+                  ? '#1e293b'
+                  : 'white',
+              color:
+                periodType === mode
+                  ? 'white'
+                  : '#1e293b',
+              cursor: 'pointer',
+              fontWeight: 500,
             }}
           >
-            {mode === 'monthly' ? 'รายเดือน' : 'รายปี'}
+            {mode === 'monthly'
+              ? 'รายเดือน'
+              : 'รายปี'}
           </button>
         ))}
       </div>
 
-      {/* dropdown เลือกเดือน/ปี — เลือกแล้วเพิ่มเข้ากราฟทันที ไม่ต้องกดปุ่ม */}
-      <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+      {/* dropdown เลือกเดือน/ปี */}
+      <div
+        style={{
+          background: 'white',
+          border: '1px solid #e2e8f0',
+          borderRadius: '12px',
+          padding: '16px',
+          marginBottom: '20px',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            gap: '12px',
+            alignItems: 'flex-end',
+            flexWrap: 'wrap',
+          }}
+        >
           {periodType === 'monthly' && (
             <div>
-              <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>เดือน</label>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '13px',
+                  marginBottom: '4px',
+                }}
+              >
+                เดือน
+              </label>
+
               <select
                 value={pickMonth}
                 onChange={(e) => {
-                  const month = Number(e.target.value);
+                  const month = Number(
+                    e.target.value
+                  );
+
                   setPickMonth(month);
                   addSelection(month, pickYear);
                 }}
-                style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                style={{
+                  padding: '8px',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                }}
               >
                 {MONTH_NAMES.map((name, i) => (
-                  <option key={i} value={i + 1}>{name}</option>
+                  <option
+                    key={i}
+                    value={i + 1}
+                  >
+                    {name}
+                  </option>
                 ))}
               </select>
             </div>
           )}
+
           <div>
-            <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>ปี</label>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '13px',
+                marginBottom: '4px',
+              }}
+            >
+              ปี
+            </label>
+
             <select
               value={pickYear}
               onChange={(e) => {
-                const year = Number(e.target.value);
+                const year = Number(
+                  e.target.value
+                );
+
                 setPickYear(year);
                 addSelection(pickMonth, year);
               }}
-              style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+              style={{
+                padding: '8px',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
+              }}
             >
               {YEAR_OPTIONS.map((y) => (
-                <option key={y} value={y}>{y}</option>
+                <option key={y} value={y}>
+                  {y}
+                </option>
               ))}
             </select>
           </div>
         </div>
 
-        {/* chip แสดงรายการที่เลือกไว้ ลบออกได้ทีละอัน */}
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '14px' }}>
+        {/* chip แสดงรายการที่เลือกไว้ */}
+        <div
+          style={{
+            display: 'flex',
+            gap: '8px',
+            flexWrap: 'wrap',
+            marginTop: '14px',
+          }}
+        >
           {currentSelection.length === 0 ? (
-            <span style={{ color: '#94a3b8', fontSize: '13px' }}>ยังไม่ได้เลือกช่วงเวลา — เลือกเดือน/ปีด้านบนเพื่อดูกราฟ</span>
+            <span
+              style={{
+                color: '#94a3b8',
+                fontSize: '13px',
+              }}
+            >
+              ยังไม่ได้เลือกช่วงเวลา —
+              เลือกเดือน/ปีด้านบนเพื่อดูกราฟ
+            </span>
           ) : (
             currentSelection.map((p, i) => (
               <span
                 key={i}
                 style={{
-                  display: 'inline-flex', alignItems: 'center', gap: '6px',
-                  background: '#eff6ff', color: '#1e40af', borderRadius: '999px',
-                  padding: '4px 6px 4px 12px', fontSize: '13px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: '#eff6ff',
+                  color: '#1e40af',
+                  borderRadius: '999px',
+                  padding:
+                    '4px 6px 4px 12px',
+                  fontSize: '13px',
                 }}
               >
-                {periodType === 'monthly' ? periodToLabel('monthly', p.month, p.year) : periodToLabel('yearly', null, p.year)}
+                {periodType === 'monthly'
+                  ? periodToLabel(
+                      'monthly',
+                      p.month,
+                      p.year
+                    )
+                  : periodToLabel(
+                      'yearly',
+                      null,
+                      p.year
+                    )}
+
                 <button
-                  onClick={() => removeSelection(i)}
-                  style={{ border: 'none', background: 'none', color: '#1e40af', cursor: 'pointer', fontWeight: 700, padding: '0 4px' }}
+                  onClick={() =>
+                    removeSelection(i)
+                  }
+                  style={{
+                    border: 'none',
+                    background: 'none',
+                    color: '#1e40af',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    padding: '0 4px',
+                  }}
                   title="เอาออก"
                 >
                   ×
@@ -330,60 +549,240 @@ export default function DashboardPage() {
       ) : (
         <>
           {/* KPI Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '28px' }}>
-            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
-              <div style={{ color: '#64748b', fontSize: '13px' }}>พลังงานรวมทุกประเภท</div>
-              <div style={{ fontSize: '26px', fontWeight: 700, marginTop: '4px' }}>
-                {grandTotal().toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns:
+                'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '16px',
+              marginBottom: '28px',
+            }}
+          >
+            <div
+              style={{
+                background: 'white',
+                border:
+                  '1px solid #e2e8f0',
+                borderRadius: '12px',
+                padding: '20px',
+              }}
+            >
+              <div
+                style={{
+                  color: '#64748b',
+                  fontSize: '13px',
+                }}
+              >
+                พลังงานรวมทุกประเภท
+              </div>
+
+              <div
+                style={{
+                  fontSize: '26px',
+                  fontWeight: 700,
+                  marginTop: '4px',
+                }}
+              >
+                {grandTotal().toLocaleString(
+                  undefined,
+                  {
+                    maximumFractionDigits: 2,
+                  }
+                )}
               </div>
             </div>
+
             {energyTypes.map((t, i) => (
-              <div key={t.id} style={{ background: 'white', border: '1px solid #e2e8f0', borderLeft: `4px solid ${PALETTE[i % PALETTE.length]}`, borderRadius: '12px', padding: '20px' }}>
-                <div style={{ color: '#64748b', fontSize: '13px' }}>{t.energy_name} ({t.unit})</div>
-                <div style={{ fontSize: '22px', fontWeight: 700, marginTop: '4px' }}>
-                  {totalForType(t.id).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              <div
+                key={t.id}
+                style={{
+                  background: 'white',
+                  border:
+                    '1px solid #e2e8f0',
+                  borderLeft: `4px solid ${
+                    PALETTE[
+                      i % PALETTE.length
+                    ]
+                  }`,
+                  borderRadius: '12px',
+                  padding: '20px',
+                }}
+              >
+                <div
+                  style={{
+                    color: '#64748b',
+                    fontSize: '13px',
+                  }}
+                >
+                  {t.energy_name} ({t.unit})
+                </div>
+
+                <div
+                  style={{
+                    fontSize: '22px',
+                    fontWeight: 700,
+                    marginTop: '4px',
+                  }}
+                >
+                  {totalForType(
+                    t.id
+                  ).toLocaleString(undefined, {
+                    maximumFractionDigits: 2,
+                  })}
                 </div>
               </div>
             ))}
           </div>
 
-          {/* กราฟแยกตามประเภทพลังงาน แต่ละแท่งมีป้ายส่วนต่าง (%) เทียบกับช่วงก่อนหน้า กดที่การ์ดเพื่อขยายดู */}
+          {/* กราฟแยกตามประเภทพลังงาน */}
           <div style={{ marginBottom: '20px' }}>
-            <h3 style={{ marginTop: 0, marginBottom: '12px' }}>การใช้พลังงานแยกตามประเภท ตามช่วงเวลาที่เลือก</h3>
+            <h3
+              style={{
+                marginTop: 0,
+                marginBottom: '12px',
+              }}
+            >
+              การใช้พลังงานแยกตามประเภท
+              ตามช่วงเวลาที่เลือก
+            </h3>
+
             {chartData.length === 0 ? (
-              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
-                <p style={{ color: '#94a3b8', margin: 0 }}>
-                  ไม่มีข้อมูลใน energy_data ตรงกับช่วงเวลาที่เลือกไว้ — ลองเพิ่มข้อมูลหรือเลือกช่วงเวลาอื่น
+              <div
+                style={{
+                  background: 'white',
+                  border:
+                    '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '20px',
+                }}
+              >
+                <p
+                  style={{
+                    color: '#94a3b8',
+                    margin: 0,
+                  }}
+                >
+                  ไม่มีข้อมูลใน energy_data
+                  ตรงกับช่วงเวลาที่เลือกไว้
+                  — ลองเพิ่มข้อมูลหรือเลือกช่วงเวลาอื่น
                 </p>
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px' }}>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns:
+                    'repeat(auto-fit, minmax(360px, 1fr))',
+                  gap: '16px',
+                }}
+              >
                 {energyTypes.map((t, i) => {
                   const series = typeSeries(t);
+
                   return (
                     <div
                       key={t.id}
-                      onClick={() => setExpandedTypeId(t.id)}
-                      style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', cursor: 'pointer' }}
+                      onClick={() =>
+                        setExpandedTypeId(t.id)
+                      }
+                      style={{
+                        background: 'white',
+                        border:
+                          '1px solid #e2e8f0',
+                        borderRadius: '12px',
+                        padding: '16px',
+                        cursor: 'pointer',
+                      }}
                       title="คลิกเพื่อขยายดู"
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                        <h4 style={{ margin: 0, fontSize: '15px' }}>{t.energy_name} ({t.unit})</h4>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent:
+                            'space-between',
+                          alignItems: 'center',
+                          marginBottom: '8px',
+                        }}
+                      >
+                        <h4
+                          style={{
+                            margin: 0,
+                            fontSize: '15px',
+                          }}
+                        >
+                          {t.energy_name} ({t.unit})
+                        </h4>
+
                         <button
-                          onClick={(e) => { e.stopPropagation(); setExpandedTypeId(t.id); }}
-                          style={{ border: '1px solid #cbd5e1', background: 'white', borderRadius: '6px', padding: '4px 10px', fontSize: '12px', cursor: 'pointer' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpandedTypeId(t.id);
+                          }}
+                          style={{
+                            border:
+                              '1px solid #cbd5e1',
+                            background: 'white',
+                            borderRadius: '6px',
+                            padding: '4px 10px',
+                            fontSize: '12px',
+                            cursor: 'pointer',
+                          }}
                         >
                           ⤢ ขยาย
                         </button>
                       </div>
-                      <ResponsiveContainer width="100%" height={280}>
-                        <BarChart data={series} margin={{ top: 24, right: 10, left: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="key" tick={{ fontSize: 11 }} />
-                          <YAxis tick={{ fontSize: 11 }} />
+
+                      <ResponsiveContainer
+                        width="100%"
+                        height={280}
+                      >
+                        <BarChart
+                          data={series}
+                          margin={{
+                            top: 24,
+                            right: 10,
+                            left: 0,
+                            bottom: 0,
+                          }}
+                        >
+                          <CartesianGrid
+                            strokeDasharray="3 3"
+                          />
+
+                          <XAxis
+                            dataKey="key"
+                            interval={0}
+                            angle={-25}
+                            textAnchor="end"
+                            height={55}
+                            tick={{ fontSize: 10 }}
+                          />
+
+                          <YAxis
+                            tick={{ fontSize: 11 }}
+                          />
+
                           <Tooltip />
-                          <Bar dataKey="value" fill={PALETTE[i % PALETTE.length]} radius={[4, 4, 0, 0]}>
-                            <LabelList content={(props) => <ChangeBarLabel {...props} series={series} />} />
+
+                          <Bar
+                            dataKey="value"
+                            fill={
+                              PALETTE[
+                                i % PALETTE.length
+                              ]
+                            }
+                            radius={[
+                              4, 4, 0, 0
+                            ]}
+                          >
+                            <LabelList
+                              content={(props) => (
+                                <ChangeBarLabel
+                                  {...props}
+                                  series={series}
+                                />
+                              )}
+                            />
                           </Bar>
                         </BarChart>
                       </ResponsiveContainer>
@@ -392,22 +791,54 @@ export default function DashboardPage() {
                 })}
               </div>
             )}
+
             {chartData.length >= 2 && (
-              <p style={{ color: '#94a3b8', fontSize: '12px', marginTop: '8px' }}>
-                ป้าย ▲/▼ เหนือแต่ละแท่ง คือส่วนต่าง % เทียบกับแท่งก่อนหน้าในรายการที่เลือกไว้ (เรียงตามวันที่) — คลิกที่การ์ดเพื่อขยายดูแบบเต็ม
+              <p
+                style={{
+                  color: '#94a3b8',
+                  fontSize: '12px',
+                  marginTop: '8px',
+                }}
+              >
+                ป้าย ▲/▼ เหนือแต่ละแท่ง
+                คือส่วนต่าง % เทียบกับแท่งก่อนหน้า
+                ในรายการที่เลือกไว้
+                (เรียงตามวันที่)
+                — คลิกที่การ์ดเพื่อขยายดูแบบเต็ม
               </p>
             )}
           </div>
 
           {/* Pie chart สัดส่วนไฟฟ้าตามระบบ */}
-          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
-            <h3 style={{ marginTop: 0 }}>สัดส่วนการใช้ไฟฟ้าตามระบบ</h3>
+          <div
+            style={{
+              background: 'white',
+              border:
+                '1px solid #e2e8f0',
+              borderRadius: '12px',
+              padding: '20px',
+              marginBottom: '20px',
+            }}
+          >
+            <h3 style={{ marginTop: 0 }}>
+              สัดส่วนการใช้ไฟฟ้าตามระบบ
+            </h3>
+
             {breakdownTotal === 0 ? (
-              <p style={{ color: '#94a3b8' }}>
-                ไม่มีข้อมูลสัดส่วนไฟฟ้าตรงกับช่วงเวลาที่เลือก — เพิ่มได้ที่หน้า Energy Data
+              <p
+                style={{
+                  color: '#94a3b8',
+                }}
+              >
+                ไม่มีข้อมูลสัดส่วนไฟฟ้า
+                ตรงกับช่วงเวลาที่เลือก
+                — เพิ่มได้ที่หน้า Energy Data
               </p>
             ) : (
-              <ResponsiveContainer width="100%" height={320}>
+              <ResponsiveContainer
+                width="100%"
+                height={320}
+              >
                 <PieChart>
                   <Pie
                     data={breakdown}
@@ -416,15 +847,34 @@ export default function DashboardPage() {
                     cx="50%"
                     cy="50%"
                     outerRadius={110}
-                    label={({ name, value, percent }) =>
-                      `${name}: ${(percent * 100).toFixed(1)}% (${value.toLocaleString()} kWh)`
+                    label={({
+                      name,
+                      value,
+                      percent,
+                    }) =>
+                      `${name}: ${(
+                        percent * 100
+                      ).toFixed(
+                        1
+                      )}% (${value.toLocaleString()} kWh)`
                     }
                   >
                     {breakdown.map((b) => (
-                      <Cell key={b.key} fill={b.color} />
+                      <Cell
+                        key={b.key}
+                        fill={b.color}
+                      />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value) => `${Number(value).toLocaleString()} kWh`} />
+
+                  <Tooltip
+                    formatter={(value) =>
+                      `${Number(
+                        value
+                      ).toLocaleString()} kWh`
+                    }
+                  />
+
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
@@ -434,63 +884,172 @@ export default function DashboardPage() {
       )}
 
       {/* Modal ขยายดูกราฟของประเภทพลังงานที่เลือก */}
-      {expandedTypeId && (() => {
-        const t = energyTypes.find((et) => et.id === expandedTypeId);
-        if (!t) return null;
-        const series = typeSeries(t);
-        const idx = energyTypes.findIndex((et) => et.id === expandedTypeId);
-        return (
-          <div
-            onClick={() => setExpandedTypeId(null)}
-            style={{
-              position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.55)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              padding: '24px', zIndex: 1000,
-            }}
-          >
+      {expandedTypeId &&
+        (() => {
+          const t = energyTypes.find(
+            (et) =>
+              et.id === expandedTypeId
+          );
+
+          if (!t) return null;
+
+          const series = typeSeries(t);
+
+          const idx = energyTypes.findIndex(
+            (et) =>
+              et.id === expandedTypeId
+          );
+
+          return (
             <div
-              onClick={(e) => e.stopPropagation()}
+              onClick={() =>
+                setExpandedTypeId(null)
+              }
               style={{
-                background: 'white', borderRadius: '16px', padding: '24px',
-                width: '100%', maxWidth: '900px', maxHeight: '90vh', overflow: 'auto',
+                position: 'fixed',
+                inset: 0,
+                background:
+                  'rgba(15, 23, 42, 0.55)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '24px',
+                zIndex: 1000,
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h3 style={{ margin: 0 }}>{t.energy_name} ({t.unit})</h3>
-                <button
-                  onClick={() => setExpandedTypeId(null)}
-                  style={{ border: 'none', background: '#f1f5f9', borderRadius: '8px', width: '32px', height: '32px', fontSize: '16px', cursor: 'pointer' }}
-                  title="ปิด"
+              <div
+                onClick={(e) =>
+                  e.stopPropagation()
+                }
+                style={{
+                  background: 'white',
+                  borderRadius: '16px',
+                  padding: '24px',
+                  width: '100%',
+                  maxWidth: '900px',
+                  maxHeight: '90vh',
+                  overflow: 'auto',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent:
+                      'space-between',
+                    alignItems: 'center',
+                    marginBottom: '16px',
+                  }}
                 >
-                  ×
-                </button>
+                  <h3 style={{ margin: 0 }}>
+                    {t.energy_name} ({t.unit})
+                  </h3>
+
+                  <button
+                    onClick={() =>
+                      setExpandedTypeId(null)
+                    }
+                    style={{
+                      border: 'none',
+                      background: '#f1f5f9',
+                      borderRadius: '8px',
+                      width: '32px',
+                      height: '32px',
+                      fontSize: '16px',
+                      cursor: 'pointer',
+                    }}
+                    title="ปิด"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {series.length === 0 ? (
+                  <p
+                    style={{
+                      color: '#94a3b8',
+                    }}
+                  >
+                    ไม่มีข้อมูลตรงกับ
+                    ช่วงเวลาที่เลือก
+                  </p>
+                ) : (
+                  <>
+                    <ResponsiveContainer
+                      width="100%"
+                      height={460}
+                    >
+                      <BarChart
+                        data={series}
+                        margin={{
+                          top: 32,
+                          right: 20,
+                          left: 0,
+                          bottom: 0,
+                        }}
+                      >
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                        />
+
+                        <XAxis
+                          dataKey="key"
+                          interval={0}
+                          angle={-25}
+                          textAnchor="end"
+                          height={65}
+                          tick={{ fontSize: 12 }}
+                        />
+
+                        <YAxis
+                          tick={{ fontSize: 13 }}
+                        />
+
+                        <Tooltip />
+
+                        <Bar
+                          dataKey="value"
+                          fill={
+                            PALETTE[
+                              idx %
+                                PALETTE.length
+                            ]
+                          }
+                          radius={[
+                            6, 6, 0, 0
+                          ]}
+                        >
+                          <LabelList
+                            content={(props) => (
+                              <ChangeBarLabel
+                                {...props}
+                                series={series}
+                              />
+                            )}
+                          />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+
+                    {series.length >= 2 && (
+                      <p
+                        style={{
+                          color: '#94a3b8',
+                          fontSize: '12px',
+                          marginTop: '8px',
+                        }}
+                      >
+                        ป้าย ▲/▼ คือส่วนต่าง %
+                        เทียบกับแท่งก่อนหน้า
+                        ในรายการที่เลือกไว้
+                        (เรียงตามวันที่)
+                      </p>
+                    )}
+                  </>
+                )}
               </div>
-              {series.length === 0 ? (
-                <p style={{ color: '#94a3b8' }}>ไม่มีข้อมูลตรงกับช่วงเวลาที่เลือก</p>
-              ) : (
-                <>
-                  <ResponsiveContainer width="100%" height={460}>
-                    <BarChart data={series} margin={{ top: 32, right: 20, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="key" tick={{ fontSize: 13 }} />
-                      <YAxis tick={{ fontSize: 13 }} />
-                      <Tooltip />
-                      <Bar dataKey="value" fill={PALETTE[idx % PALETTE.length]} radius={[6, 6, 0, 0]}>
-                        <LabelList content={(props) => <ChangeBarLabel {...props} series={series} />} />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                  {series.length >= 2 && (
-                    <p style={{ color: '#94a3b8', fontSize: '12px', marginTop: '8px' }}>
-                      ป้าย ▲/▼ คือส่วนต่าง % เทียบกับแท่งก่อนหน้าในรายการที่เลือกไว้ (เรียงตามวันที่)
-                    </p>
-                  )}
-                </>
-              )}
             </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
     </div>
   );
 }
