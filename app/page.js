@@ -16,13 +16,11 @@ import {
   CartesianGrid,
 } from 'recharts';
 
-// สีกำหนดเองภายในระบบ ไล่ตามลำดับประเภทพลังงาน ไม่ต้องให้ผู้ใช้เลือก
 const PALETTE = [
   '#3b82f6', '#ef4444', '#22c55e', '#f59e0b',
   '#a855f7', '#06b6d4', '#ec4899', '#64748b',
 ];
 
-// รายชื่อระบบไฟฟ้าย่อย (ต้องตรงกับหน้า Energy Data)
 const ELECTRICITY_SYSTEMS = [
   { key: 'cooling', name: 'Cooling System', color: '#3b82f6' },
   { key: 'lighting', name: 'Lighting System', color: '#f59e0b' },
@@ -31,12 +29,43 @@ const ELECTRICITY_SYSTEMS = [
   { key: 'others', name: 'Others', color: '#64748b' },
 ];
 
+const MONTH_NAMES = [
+  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
+];
+
+const CURRENT_YEAR = new Date().getFullYear();
+const YEAR_OPTIONS = Array.from({ length: 11 }, (_, i) => CURRENT_YEAR - 5 + i);
+
+function periodToDate(periodType, month, year) {
+  if (periodType === 'yearly') return `${year}-01-01`;
+  return `${year}-${String(month).padStart(2, '0')}-01`;
+}
+
+function periodToLabel(periodType, month, year) {
+  if (periodType === 'yearly') return `ปี ${year}`;
+  return `${MONTH_NAMES[month - 1]} ${year}`;
+}
+
 export default function DashboardPage() {
   const [energyTypes, setEnergyTypes] = useState([]);
-  const [records, setRecords] = useState([]); // energy_data + nested energy_values
-  const [breakdown, setBreakdown] = useState([]); // [{key, name, color, value}]
-  const [viewMode, setViewMode] = useState('monthly'); // ต้องตรงกับค่าที่ใช้เก็บใน period_type
+  const [records, setRecords] = useState([]);
+  const [breakdown, setBreakdown] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const [periodType, setPeriodType] = useState('monthly'); // 'monthly' | 'yearly'
+
+  // ตัวเลือกที่กำลังจะเพิ่มใน dropdown
+  const [pickMonth, setPickMonth] = useState(new Date().getMonth() + 1);
+  const [pickYear, setPickYear] = useState(CURRENT_YEAR);
+
+  // รายการช่วงเวลาที่ถูกเลือกไว้ แยกเก็บของ monthly / yearly คนละชุด สลับโหมดแล้วไม่หาย
+  const [selected, setSelected] = useState({
+    monthly: [{ month: new Date().getMonth() + 1, year: CURRENT_YEAR }],
+    yearly: [{ year: CURRENT_YEAR }],
+  });
+
+  const currentSelection = selected[periodType];
 
   useEffect(() => {
     fetchEnergyTypes();
@@ -46,7 +75,7 @@ export default function DashboardPage() {
     fetchRecords();
     fetchBreakdown();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode]);
+  }, [periodType, selected]);
 
   async function fetchEnergyTypes() {
     const { data, error } = await supabase
@@ -58,7 +87,19 @@ export default function DashboardPage() {
     if (!error) setEnergyTypes(data || []);
   }
 
+  function selectedDates() {
+    return currentSelection.map((p) =>
+      periodType === 'yearly' ? periodToDate('yearly', null, p.year) : periodToDate('monthly', p.month, p.year)
+    );
+  }
+
   async function fetchRecords() {
+    const dates = selectedDates();
+    if (dates.length === 0) {
+      setRecords([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
 
     const { data, error } = await supabase
@@ -75,19 +116,26 @@ export default function DashboardPage() {
           energy_types ( energy_name, energy_key, unit )
         )
       `)
-      .eq('period_type', viewMode)
+      .eq('period_type', periodType)
+      .in('record_date', dates)
       .order('record_date', { ascending: true });
 
     if (!error) setRecords(data || []);
     setLoading(false);
   }
 
-  // ดึงสัดส่วนไฟฟ้าตามระบบ รวมทุก record ในช่วงเวลาที่เลือก (รายเดือน/รายปี)
   async function fetchBreakdown() {
+    const dates = selectedDates();
+    if (dates.length === 0) {
+      setBreakdown([]);
+      return;
+    }
+
     const { data, error } = await supabase
       .from('electricity_breakdown')
-      .select('system_key, value, energy_data!inner(period_type)')
-      .eq('energy_data.period_type', viewMode);
+      .select('system_key, value, energy_data!inner(record_date, period_type)')
+      .eq('energy_data.period_type', periodType)
+      .in('energy_data.record_date', dates);
 
     if (error) {
       console.error(error);
@@ -106,7 +154,6 @@ export default function DashboardPage() {
     setBreakdown(ELECTRICITY_SYSTEMS.map((s) => ({ ...s, value: totals[s.key] })));
   }
 
-  // แปลง records (energy_data + energy_values ซ้อนอยู่ข้างใน) ให้เป็นรูปแบบที่กราฟใช้ได้
   function buildChartData() {
     return records.map((r) => {
       const row = { key: r.period_label || r.record_date };
@@ -132,6 +179,29 @@ export default function DashboardPage() {
     }, 0);
   }
 
+  // ---------- จัดการรายการที่เลือก ----------
+  function addSelection() {
+    setSelected((prev) => {
+      const list = prev[periodType];
+      const exists =
+        periodType === 'monthly'
+          ? list.some((p) => p.month === pickMonth && p.year === pickYear)
+          : list.some((p) => p.year === pickYear);
+
+      if (exists) return prev;
+
+      const newItem = periodType === 'monthly' ? { month: pickMonth, year: pickYear } : { year: pickYear };
+      return { ...prev, [periodType]: [...list, newItem] };
+    });
+  }
+
+  function removeSelection(idx) {
+    setSelected((prev) => {
+      const list = prev[periodType].filter((_, i) => i !== idx);
+      return { ...prev, [periodType]: list };
+    });
+  }
+
   const chartData = buildChartData();
   const breakdownTotal = breakdown.reduce((sum, b) => sum + b.value, 0);
 
@@ -144,16 +214,16 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Toggle รายเดือน/รายปี */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+      {/* เลือกโหมด รายเดือน/รายปี */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
         {['monthly', 'yearly'].map((mode) => (
           <button
             key={mode}
-            onClick={() => setViewMode(mode)}
+            onClick={() => setPeriodType(mode)}
             style={{
               padding: '8px 16px', borderRadius: '6px', border: '1px solid #e2e8f0',
-              background: viewMode === mode ? '#1e293b' : 'white',
-              color: viewMode === mode ? 'white' : '#1e293b',
+              background: periodType === mode ? '#1e293b' : 'white',
+              color: periodType === mode ? 'white' : '#1e293b',
               cursor: 'pointer', fontWeight: 500,
             }}
           >
@@ -162,11 +232,75 @@ export default function DashboardPage() {
         ))}
       </div>
 
+      {/* dropdown เลือกเดือน/ปี ที่จะเพิ่มเข้ามาดูในกราฟ */}
+      <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          {periodType === 'monthly' && (
+            <div>
+              <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>เดือน</label>
+              <select
+                value={pickMonth}
+                onChange={(e) => setPickMonth(Number(e.target.value))}
+                style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+              >
+                {MONTH_NAMES.map((name, i) => (
+                  <option key={i} value={i + 1}>{name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div>
+            <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>ปี</label>
+            <select
+              value={pickYear}
+              onChange={(e) => setPickYear(Number(e.target.value))}
+              style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+            >
+              {YEAR_OPTIONS.map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={addSelection}
+            style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#3b82f6', color: 'white', fontWeight: 600, cursor: 'pointer' }}
+          >
+            + เพิ่มเข้ากราฟ
+          </button>
+        </div>
+
+        {/* chip แสดงรายการที่เลือกไว้ ลบออกได้ทีละอัน */}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '14px' }}>
+          {currentSelection.length === 0 ? (
+            <span style={{ color: '#94a3b8', fontSize: '13px' }}>ยังไม่ได้เลือกช่วงเวลา — เพิ่มอย่างน้อย 1 รายการเพื่อดูกราฟ</span>
+          ) : (
+            currentSelection.map((p, i) => (
+              <span
+                key={i}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                  background: '#eff6ff', color: '#1e40af', borderRadius: '999px',
+                  padding: '4px 6px 4px 12px', fontSize: '13px',
+                }}
+              >
+                {periodType === 'monthly' ? periodToLabel('monthly', p.month, p.year) : periodToLabel('yearly', null, p.year)}
+                <button
+                  onClick={() => removeSelection(i)}
+                  style={{ border: 'none', background: 'none', color: '#1e40af', cursor: 'pointer', fontWeight: 700, padding: '0 4px' }}
+                  title="เอาออก"
+                >
+                  ×
+                </button>
+              </span>
+            ))
+          )}
+        </div>
+      </div>
+
       {loading ? (
         <p>กำลังโหลดข้อมูล...</p>
       ) : (
         <>
-          {/* KPI Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '28px' }}>
             <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
               <div style={{ color: '#64748b', fontSize: '13px' }}>พลังงานรวมทุกประเภท</div>
@@ -184,13 +318,12 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          {/* กราฟหลัก + Pie chart สัดส่วนไฟฟ้า วางคู่กัน */}
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: '20px', marginBottom: '20px' }}>
             <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
-              <h3 style={{ marginTop: 0 }}>การใช้พลังงาน{viewMode === 'monthly' ? 'รายเดือน' : 'รายปี'}</h3>
+              <h3 style={{ marginTop: 0 }}>การใช้พลังงานตามช่วงเวลาที่เลือก</h3>
               {chartData.length === 0 ? (
                 <p style={{ color: '#94a3b8' }}>
-                  ยังไม่มีข้อมูลใน energy_data ที่ period_type = &quot;{viewMode}&quot; — ลองเพิ่มข้อมูลในตารางก่อน
+                  ไม่มีข้อมูลใน energy_data ตรงกับช่วงเวลาที่เลือกไว้ — ลองเพิ่มข้อมูลหรือเลือกช่วงเวลาอื่น
                 </p>
               ) : (
                 <ResponsiveContainer width="100%" height={320}>
@@ -212,7 +345,7 @@ export default function DashboardPage() {
               <h3 style={{ marginTop: 0 }}>สัดส่วนการใช้ไฟฟ้าตามระบบ</h3>
               {breakdownTotal === 0 ? (
                 <p style={{ color: '#94a3b8' }}>
-                  ยังไม่มีข้อมูลสัดส่วนไฟฟ้า — เพิ่มได้ที่หน้า Energy Data
+                  ไม่มีข้อมูลสัดส่วนไฟฟ้าตรงกับช่วงเวลาที่เลือก — เพิ่มได้ที่หน้า Energy Data
                 </p>
               ) : (
                 <ResponsiveContainer width="100%" height={320}>
@@ -241,7 +374,6 @@ export default function DashboardPage() {
           </div>
         </>
       )}
-
     </div>
   );
 }
