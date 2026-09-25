@@ -3,6 +3,15 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 
+// รายชื่อระบบไฟฟ้าย่อย (ชื่อภาษาอังกฤษไว้ใช้แสดงในกราฟ Dashboard)
+const ELECTRICITY_SYSTEMS = [
+  { key: 'cooling', name: 'Cooling System' },
+  { key: 'lighting', name: 'Lighting System' },
+  { key: 'production', name: 'Production System' },
+  { key: 'air_conditioning', name: 'Air Conditioning System' },
+  { key: 'others', name: 'Others' },
+];
+
 export default function EnergyDataPage() {
   const [energyTypes, setEnergyTypes] = useState([]);
   const [entries, setEntries] = useState([]);
@@ -21,6 +30,7 @@ export default function EnergyDataPage() {
     period_label: '',
     note: '',
     values: {},
+    breakdown: Object.fromEntries(ELECTRICITY_SYSTEMS.map((s) => [s.key, ''])),
   };
   const [entryForm, setEntryForm] = useState(emptyEntryForm);
   const [editForm, setEditForm] = useState(emptyEntryForm);
@@ -50,7 +60,8 @@ export default function EnergyDataPage() {
       .from('energy_data')
       .select(`
         id, record_date, period_type, period_label, note,
-        energy_values ( value, energy_type_id, energy_types ( energy_name, unit ) )
+        energy_values ( value, energy_type_id, energy_types ( energy_name, unit ) ),
+        electricity_breakdown ( system_key, value )
       `)
       .eq('period_type', viewMode)
       .order('record_date', { ascending: false });
@@ -117,6 +128,19 @@ export default function EnergyDataPage() {
       if (valuesError) alert('บันทึกค่าพลังงานไม่สำเร็จ: ' + valuesError.message);
     }
 
+    const breakdownRows = ELECTRICITY_SYSTEMS
+      .filter((s) => entryForm.breakdown[s.key] !== undefined && entryForm.breakdown[s.key] !== '')
+      .map((s) => ({
+        energy_data_id: dataRow.id,
+        system_key: s.key,
+        value: Number(entryForm.breakdown[s.key]),
+      }));
+
+    if (breakdownRows.length > 0) {
+      const { error: breakdownError } = await supabase.from('electricity_breakdown').insert(breakdownRows);
+      if (breakdownError) alert('บันทึกสัดส่วนไฟฟ้าไม่สำเร็จ: ' + breakdownError.message);
+    }
+
     setSaving(false);
     setEntryForm(emptyEntryForm);
     setShowAddEntryForm(false);
@@ -130,12 +154,18 @@ export default function EnergyDataPage() {
       values[v.energy_type_id] = v.value;
     });
 
+    const breakdown = Object.fromEntries(ELECTRICITY_SYSTEMS.map((s) => [s.key, '']));
+    (entry.electricity_breakdown || []).forEach((b) => {
+      breakdown[b.system_key] = b.value;
+    });
+
     setEditForm({
       record_date: entry.record_date,
       period_type: entry.period_type,
       period_label: entry.period_label || '',
       note: entry.note || '',
       values,
+      breakdown,
     });
     setEditingId(entry.id);
   }
@@ -184,6 +214,22 @@ export default function EnergyDataPage() {
       if (valuesError) alert('แก้ไขค่าพลังงานไม่สำเร็จ: ' + valuesError.message);
     }
 
+    // 3) ลบ+ใส่สัดส่วนไฟฟ้าใหม่ ด้วยหลักการเดียวกัน
+    await supabase.from('electricity_breakdown').delete().eq('energy_data_id', editingId);
+
+    const breakdownRows = ELECTRICITY_SYSTEMS
+      .filter((s) => editForm.breakdown[s.key] !== undefined && editForm.breakdown[s.key] !== '')
+      .map((s) => ({
+        energy_data_id: editingId,
+        system_key: s.key,
+        value: Number(editForm.breakdown[s.key]),
+      }));
+
+    if (breakdownRows.length > 0) {
+      const { error: breakdownError } = await supabase.from('electricity_breakdown').insert(breakdownRows);
+      if (breakdownError) alert('แก้ไขสัดส่วนไฟฟ้าไม่สำเร็จ: ' + breakdownError.message);
+    }
+
     setSaving(false);
     cancelEdit();
     fetchEntries();
@@ -192,6 +238,7 @@ export default function EnergyDataPage() {
   async function handleDeleteEntry(id) {
     if (!confirm('ลบข้อมูลนี้ใช่ไหม?')) return;
     await supabase.from('energy_values').delete().eq('energy_data_id', id);
+    await supabase.from('electricity_breakdown').delete().eq('energy_data_id', id);
     await supabase.from('energy_data').delete().eq('id', id);
     fetchEntries();
   }
@@ -301,6 +348,7 @@ export default function EnergyDataPage() {
                 <th style={{ padding: '8px' }}>วันที่</th>
                 <th style={{ padding: '8px' }}>ป้ายกำกับ</th>
                 <th style={{ padding: '8px' }}>ค่าพลังงาน</th>
+                <th style={{ padding: '8px' }}>สัดส่วนไฟฟ้าตามระบบ</th>
                 <th style={{ padding: '8px' }}>จัดการ</th>
               </tr>
             </thead>
@@ -308,7 +356,7 @@ export default function EnergyDataPage() {
               {entries.map((entry) =>
                 editingId === entry.id ? (
                   <tr key={entry.id}>
-                    <td colSpan={4} style={{ padding: '12px', background: '#f8fafc' }}>
+                    <td colSpan={5} style={{ padding: '12px', background: '#f8fafc' }}>
                       <EntryFields form={editForm} setForm={setEditForm} energyTypes={energyTypes} hidePeriodType />
                       <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
                         <button onClick={handleUpdateEntry} disabled={saving} style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#22c55e', color: 'white', cursor: 'pointer' }}>
@@ -327,6 +375,14 @@ export default function EnergyDataPage() {
                     <td style={{ padding: '8px' }}>
                       {(entry.energy_values || [])
                         .map((v) => `${v.energy_types?.energy_name}: ${v.value}${v.energy_types?.unit}`)
+                        .join(', ')}
+                    </td>
+                    <td style={{ padding: '8px' }}>
+                      {(entry.electricity_breakdown || [])
+                        .map((b) => {
+                          const sys = ELECTRICITY_SYSTEMS.find((s) => s.key === b.system_key);
+                          return `${sys ? sys.name : b.system_key}: ${b.value}kWh`;
+                        })
                         .join(', ')}
                     </td>
                     <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
@@ -390,7 +446,7 @@ function EntryFields({ form, setForm, energyTypes, hidePeriodType }) {
       </div>
 
       <label style={{ display: 'block', fontSize: '13px', marginBottom: '8px', fontWeight: 600 }}>ค่าพลังงานแต่ละประเภท</label>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', marginBottom: '12px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', marginBottom: '16px' }}>
         {energyTypes.map((t) => (
           <div key={t.id}>
             <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>{t.energy_name} ({t.unit})</label>
@@ -399,6 +455,23 @@ function EntryFields({ form, setForm, energyTypes, hidePeriodType }) {
               step="any"
               value={form.values[t.id] ?? ''}
               onChange={(e) => setForm({ ...form, values: { ...form.values, [t.id]: e.target.value } })}
+              placeholder="0"
+              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+            />
+          </div>
+        ))}
+      </div>
+
+      <label style={{ display: 'block', fontSize: '13px', marginBottom: '8px', fontWeight: 600 }}>สัดส่วนการใช้ไฟฟ้าตามระบบ (kWh)</label>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', marginBottom: '12px' }}>
+        {ELECTRICITY_SYSTEMS.map((s) => (
+          <div key={s.key}>
+            <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>{s.name}</label>
+            <input
+              type="number"
+              step="any"
+              value={form.breakdown[s.key] ?? ''}
+              onChange={(e) => setForm({ ...form, breakdown: { ...form.breakdown, [s.key]: e.target.value } })}
               placeholder="0"
               style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
             />
