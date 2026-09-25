@@ -55,11 +55,9 @@ export default function DashboardPage() {
 
   const [periodType, setPeriodType] = useState('monthly'); // 'monthly' | 'yearly'
 
-  // ตัวเลือกที่กำลังจะเพิ่มใน dropdown
   const [pickMonth, setPickMonth] = useState(new Date().getMonth() + 1);
   const [pickYear, setPickYear] = useState(CURRENT_YEAR);
 
-  // รายการช่วงเวลาที่ถูกเลือกไว้ แยกเก็บของ monthly / yearly คนละชุด สลับโหมดแล้วไม่หาย
   const [selected, setSelected] = useState({
     monthly: [{ month: new Date().getMonth() + 1, year: CURRENT_YEAR }],
     yearly: [{ year: CURRENT_YEAR }],
@@ -165,6 +163,22 @@ export default function DashboardPage() {
     });
   }
 
+  // ค่าของประเภทพลังงานหนึ่งๆ เรียงตามช่วงเวลาที่เลือก (ใช้ทำกราฟย่อย + คำนวณส่วนต่าง)
+  function typeSeries(t) {
+    return chartData.map((row) => ({ key: row.key, value: Number(row[t.energy_name] || 0) }));
+  }
+
+  // เทียบค่าล่าสุด กับค่าของช่วงก่อนหน้าที่เลือกไว้ (เรียงตามวันที่)
+  function computeChange(series) {
+    if (series.length < 2) return null;
+    const last = series[series.length - 1].value;
+    const prev = series[series.length - 2].value;
+    const diff = last - prev;
+    const percent = prev === 0 ? (last === 0 ? 0 : 100) : (diff / prev) * 100;
+    const direction = diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat';
+    return { percent, direction };
+  }
+
   function totalForType(typeId) {
     return records.reduce((sum, r) => {
       const match = (r.energy_values || []).find((v) => v.energy_type_id === typeId);
@@ -179,7 +193,6 @@ export default function DashboardPage() {
     }, 0);
   }
 
-  // ---------- จัดการรายการที่เลือก ----------
   function addSelection(month, year) {
     setSelected((prev) => {
       const list = prev[periodType];
@@ -214,7 +227,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* เลือกโหมด รายเดือน/รายปี */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
         {['monthly', 'yearly'].map((mode) => (
           <button
@@ -232,7 +244,6 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* dropdown เลือกเดือน/ปี — เลือกแล้วเพิ่มเข้ากราฟทันที ไม่ต้องกดปุ่ม */}
       <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
           {periodType === 'monthly' && (
@@ -271,7 +282,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* chip แสดงรายการที่เลือกไว้ ลบออกได้ทีละอัน */}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '14px' }}>
           {currentSelection.length === 0 ? (
             <span style={{ color: '#94a3b8', fontSize: '13px' }}>ยังไม่ได้เลือกช่วงเวลา — เลือกเดือน/ปีด้านบนเพื่อดูกราฟ</span>
@@ -303,7 +313,6 @@ export default function DashboardPage() {
         <p>กำลังโหลดข้อมูล...</p>
       ) : (
         <>
-          {/* KPI Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '28px' }}>
             <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
               <div style={{ color: '#64748b', fontSize: '13px' }}>พลังงานรวมทุกประเภท</div>
@@ -321,60 +330,87 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          {/* กราฟหลัก + Pie chart สัดส่วนไฟฟ้า วางคู่กัน */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: '20px', marginBottom: '20px' }}>
-            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
-              <h3 style={{ marginTop: 0 }}>การใช้พลังงานตามช่วงเวลาที่เลือก</h3>
-              {chartData.length === 0 ? (
-                <p style={{ color: '#94a3b8' }}>
+          {/* กราฟแยกตามประเภทพลังงาน แต่ละอันพร้อมป้ายส่วนต่าง (%) เทียบช่วงล่าสุดกับช่วงก่อนหน้า */}
+          <div style={{ marginBottom: '20px' }}>
+            <h3 style={{ marginTop: 0, marginBottom: '12px' }}>การใช้พลังงานแยกตามประเภท ตามช่วงเวลาที่เลือก</h3>
+            {chartData.length === 0 ? (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
+                <p style={{ color: '#94a3b8', margin: 0 }}>
                   ไม่มีข้อมูลใน energy_data ตรงกับช่วงเวลาที่เลือกไว้ — ลองเพิ่มข้อมูลหรือเลือกช่วงเวลาอื่น
                 </p>
-              ) : (
-                <ResponsiveContainer width="100%" height={320}>
-                  <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="key" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    {energyTypes.map((t, i) => (
-                      <Bar key={t.id} dataKey={t.energy_name} fill={PALETTE[i % PALETTE.length]} radius={[4, 4, 0, 0]} />
-                    ))}
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                {energyTypes.map((t, i) => {
+                  const series = typeSeries(t);
+                  const change = computeChange(series);
+                  return (
+                    <div key={t.id} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <h4 style={{ margin: 0, fontSize: '15px' }}>{t.energy_name} ({t.unit})</h4>
+                        {change && change.direction !== 'flat' && (
+                          <span
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: '4px',
+                              fontSize: '13px', fontWeight: 700,
+                              color: change.direction === 'up' ? '#16a34a' : '#dc2626',
+                            }}
+                          >
+                            {change.direction === 'up' ? '▲' : '▼'} {Math.abs(change.percent).toFixed(1)}%
+                          </span>
+                        )}
+                      </div>
+                      <ResponsiveContainer width="100%" height={200}>
+                        <BarChart data={series}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="key" tick={{ fontSize: 11 }} />
+                          <YAxis tick={{ fontSize: 11 }} />
+                          <Tooltip />
+                          <Bar dataKey="value" fill={PALETTE[i % PALETTE.length]} radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {chartData.length >= 2 && (
+              <p style={{ color: '#94a3b8', fontSize: '12px', marginTop: '8px' }}>
+                % ที่แสดง คือส่วนต่างของช่วงล่าสุดเทียบกับช่วงก่อนหน้า (เรียงตามวันที่) ในรายการที่เลือกไว้
+              </p>
+            )}
+          </div>
 
-            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
-              <h3 style={{ marginTop: 0 }}>สัดส่วนการใช้ไฟฟ้าตามระบบ</h3>
-              {breakdownTotal === 0 ? (
-                <p style={{ color: '#94a3b8' }}>
-                  ไม่มีข้อมูลสัดส่วนไฟฟ้าตรงกับช่วงเวลาที่เลือก — เพิ่มได้ที่หน้า Energy Data
-                </p>
-              ) : (
-                <ResponsiveContainer width="100%" height={320}>
-                  <PieChart>
-                    <Pie
-                      data={breakdown}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={110}
-                      label={({ name, value, percent }) =>
-                        `${name}: ${(percent * 100).toFixed(1)}% (${value.toLocaleString()} kWh)`
-                      }
-                    >
-                      {breakdown.map((b) => (
-                        <Cell key={b.key} fill={b.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => `${Number(value).toLocaleString()} kWh`} />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              )}
-            </div>
+          {/* Pie chart สัดส่วนไฟฟ้าตามระบบ */}
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
+            <h3 style={{ marginTop: 0 }}>สัดส่วนการใช้ไฟฟ้าตามระบบ</h3>
+            {breakdownTotal === 0 ? (
+              <p style={{ color: '#94a3b8' }}>
+                ไม่มีข้อมูลสัดส่วนไฟฟ้าตรงกับช่วงเวลาที่เลือก — เพิ่มได้ที่หน้า Energy Data
+              </p>
+            ) : (
+              <ResponsiveContainer width="100%" height={320}>
+                <PieChart>
+                  <Pie
+                    data={breakdown}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={110}
+                    label={({ name, value, percent }) =>
+                      `${name}: ${(percent * 100).toFixed(1)}% (${value.toLocaleString()} kWh)`
+                    }
+                  >
+                    {breakdown.map((b) => (
+                      <Cell key={b.key} fill={b.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => `${Number(value).toLocaleString()} kWh`} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </>
       )}
